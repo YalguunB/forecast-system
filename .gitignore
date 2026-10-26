@@ -1,0 +1,8 @@
+.env
+node_modules/
+frontend/dist/
+__pycache__/
+.pytest_cache/
+.hypothesis/
+data/synthetic/
+filestore/

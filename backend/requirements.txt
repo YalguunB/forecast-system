@@ -1,0 +1,12 @@
+# Хувилбарыг түгжсэн (NFR-8, R7). Тест эдгээр хувилбар дээр өнгөрсөн.
+fastapi==0.162.0
+uvicorn==0.54.0
+psycopg[binary]==3.3.6
+pyjwt==2.15.0
+bcrypt==5.0.0
+python-multipart==0.0.32
+pandas==3.0.5
+numpy==2.5.3
+statsmodels==0.15.0
+scipy==1.18.1
+openpyxl==3.1.5
