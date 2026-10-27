@@ -13,16 +13,17 @@ from fastapi.security import OAuth2PasswordBearer
 from ..config import get_settings
 from ..db import connect
 
-ROLES = ("data_steward", "analyst", "manager", "researcher", "admin")
+ROLES = ("executive", "manager", "admin")
 
-# Хүснэгт 4.11 — үйлдэл → эрхтэй үүрэг
+# Дипломын Хүснэгт 2.1 — үйлдэл → эрхтэй үүрэг.
+# Менежерийн хандалт нь нэмээд салбараар хязгаарлагдана (branch_scope, FR-07, NFR-07).
 PERMISSIONS: dict[str, tuple[str, ...]] = {
-    "import":          ("data_steward",),
-    "quality_view":    ("data_steward", "analyst", "researcher", "admin"),
-    "forecast_view":   ("data_steward", "analyst", "manager", "researcher"),
-    "adjust":          ("analyst",),
-    "export":          ("analyst", "manager", "researcher"),
-    "experiment":      ("researcher",),
+    "import":          ("manager",),
+    "quality_view":    ("executive", "manager"),
+    "forecast_view":   ("executive", "manager"),
+    "adjust":          ("manager",),
+    "export":          ("executive", "manager"),
+    "experiment":      ("manager",),
     "admin":           ("admin",),
     "series_view":     ROLES,
 }
@@ -73,7 +74,7 @@ def current_user(token: str = Depends(oauth2), conn: psycopg.Connection = Depend
         payload = jwt.decode(token, get_settings().jwt_secret, algorithms=["HS256"])
     except jwt.PyJWTError:
         raise ApiError(status.HTTP_401_UNAUTHORIZED, "unauthenticated", "Нэвтрэх шаардлагатай")
-    user = conn.execute("SELECT id, username, full_name, roles, is_active FROM governance.app_user WHERE id=%s",
+    user = conn.execute("SELECT id, username, full_name, roles, branches, is_active FROM governance.app_user WHERE id=%s",
                         (int(payload["sub"]),)).fetchone()
     if not user or not user["is_active"]:
         raise ApiError(status.HTTP_401_UNAUTHORIZED, "unauthenticated", "Хэрэглэгч идэвхгүй")
@@ -103,5 +104,38 @@ def audit_rejected(user_id: int, action: str, object_type: str, object_id, detai
         conn.close()
 
 
+def branch_scope(user: dict) -> list[str] | None:
+    """None = бүх салбар (удирдлага, админ эсвэл '*' оноогдсон менежер); жагсаалт = зөвхөн эдгээр салбар."""
+    roles = set(user["roles"])
+    if "executive" in roles or "admin" in roles:
+        return None
+    branches = list(user.get("branches") or [])
+    if "*" in branches:
+        return None
+    return branches
+
+
+def assert_branch(user: dict, branch_id: str) -> None:
+    scope = branch_scope(user)
+    if scope is not None and branch_id not in scope:
+        raise ApiError(403, "branch_forbidden", f"«{branch_id}» салбарын мэдээлэлд хандах эрх танд алга",
+                       {"your_branches": scope})
+
+
+def scope_sql(user: dict, column: str = "s.branch_id") -> tuple[str, list]:
+    """SQL нөхцөл ба параметр: салбараар шүүх (хязгааргүй бол хоосон)."""
+    scope = branch_scope(user)
+    if scope is None:
+        return "", []
+    return f" AND {column} = ANY(%s)", [scope]
+
+
 def not_found(what: str, ident) -> ApiError:
     return ApiError(404, "not_found", f"{what} олдсонгүй", {"id": ident})
+
+
+def require_monthly(e: dict) -> None:
+    """Хуучин өдрийн туршилтыг шинэ (сарын) кодоор уншихгүй — 500 биш ойлгомжтой 409."""
+    from ..engine.protocol import LEGACY_MESSAGE, is_monthly
+    if not is_monthly(e.get("protocol")):
+        raise ApiError(409, "legacy_experiment", LEGACY_MESSAGE, {"experiment_id": e.get("id")})

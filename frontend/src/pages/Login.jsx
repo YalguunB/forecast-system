@@ -16,7 +16,6 @@ export default function Login({ onLogin }) {
     <div className="login">
       <form className="panel" onSubmit={submit}>
         <h1>Таамаглалын систем</h1>
-        <p className="muted small">Борлуулалтын түүхээс 7, 14, 30 хоногийн таамаглал гаргаж, загваруудыг шударга харьцуулна.</p>
         <label htmlFor="u">Нэвтрэх нэр</label>
         <input id="u" autoComplete="username" value={u} onChange={(e) => setU(e.target.value)} required />
         <label htmlFor="p" style={{ marginTop: "0.75rem" }}>Нууц үг</label>

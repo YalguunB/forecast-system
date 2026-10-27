@@ -2,9 +2,10 @@ import { useMemo } from "react";
 import { api } from "../api.js";
 import { go } from "../App.jsx";
 import { ErrorNote, Loading, Plot, plotLayout, useLoad } from "../components.jsx";
-import { MODEL_LABELS, fmt } from "../labels.js";
+import { seriesLabel, HORIZONS, MODEL_LABELS, fmt, monthLabel, pct } from "../labels.js";
 
-const PALETTE = ["#2c6cb0", "#3e7d5a", "#8e5bb5", "#c2851a", "#b5483b", "#4a8d9c"];
+const PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"];
+const runLabel = (r) => (MODEL_LABELS[r.model] || r.model) + (r.model === "ets" && r.params?.trend ? " + тренд" : "") + (r.role === "baseline" ? " (суурь)" : "");
 
 // FR-F4: загваруудыг ижил эхлэл дээр харьцуулах
 export default function Compare({ params }) {
@@ -22,10 +23,10 @@ export default function Compare({ params }) {
     if (!c) return [];
     const before = c.values.filter((v) => !v.after_origin), after = c.values.filter((v) => v.after_origin);
     return [
-      { x: before.map((v) => v.day), y: before.map((v) => v.value), name: "Түүх", mode: "lines", line: { color: "#7b8a92", width: 1.3 } },
-      { x: after.map((v) => v.day), y: after.map((v) => v.value), name: "Бодит утга", mode: "markers", marker: { color: "#1b2b33", size: 6, symbol: "circle-open" } },
+      { x: before.map((v) => v.month), y: before.map((v) => v.value), name: "Түүх", mode: "lines+markers", marker: { size: 4 }, line: { color: "#7b8a92", width: 1.5 } },
+      { x: after.map((v) => v.month), y: after.map((v) => v.value), name: "Бодит утга", mode: "markers", marker: { color: "#1b2b33", size: 9, symbol: "circle-open", line: { width: 2 } } },
       ...c.runs.map((r, i) => ({ x: r.forecast.map((p) => p.target_date), y: r.forecast.map((p) => p.y_hat),
-        name: `${MODEL_LABELS[r.model] || r.model}${r.role === "baseline" ? " (суурь)" : ""}`, mode: "lines",
+        name: runLabel(r), mode: "lines",
         line: { color: PALETTE[i % PALETTE.length], width: 2, dash: r.role === "baseline" ? "dash" : "solid" } })),
     ];
   }, [c]);
@@ -33,25 +34,25 @@ export default function Compare({ params }) {
   if (exps.loading) return <Loading />;
   return (
     <>
-      <h1>Загвар харьцуулалт</h1>
-      <p className="muted">Бүх загварыг нэг эхлэлээс, ижил түүхээр таамагласан. Validation-д бүх загвар, тестэд зөвхөн сонгосон ба суурь загвар харагдана.</p>
-      {!list.length ? <p className="muted">Validation дууссан туршилт алга.</p> : (
+      <h1>Харьцуулалт</h1>
+      <p className="muted">Нэг бүтээгдэхүүн дээр бүх аргын 12 сарын таамаглалыг нэг сараас эхлүүлж, бодит борлуулалттай (цэг) хамт харуулна. Аль арга яагаад сонгогдсоныг ойлгоход тусална.</p>
+      {!list.length ? <p className="muted">Аргуудыг туршсан таамаглал алга.</p> : (
         <div className="row" style={{ marginBottom: "1rem" }}>
-          <div className="grow"><label htmlFor="e">Туршилт</label>
+          <div className="grow"><label htmlFor="e">Таамаглал</label>
             <select id="e" value={eid} onChange={(e) => go("compare", { experiment: e.target.value })}>
               {list.map((e) => <option key={e.id} value={e.id}>#{e.id} {e.name} — {e.target_label}</option>)}
             </select></div>
-          <div className="grow"><label htmlFor="s">Цуваа</label>
+          <div className="grow"><label htmlFor="s">Бүтээгдэхүүн</label>
             <select id="s" value={sid || ""} onChange={(e) => nav({ series: e.target.value, origin: undefined })}>
-              {(series.data || []).map((s) => <option key={s.series_id} value={s.series_id}>{s.product_id} / {s.branch_id} ({s.class})</option>)}
+              {(series.data || []).map((s) => <option key={s.series_id} value={s.series_id}>{seriesLabel(s)} ({s.class})</option>)}
             </select></div>
-          <div><label htmlFor="sp">Хуваалт</label>
+          <div><label htmlFor="sp">Үе</label>
             <select id="sp" value={split} onChange={(e) => nav({ split: e.target.value, origin: undefined })}>
-              <option value="validation">Validation</option><option value="test">Тест</option>
+              <option value="validation">Арга сонгох үе</option><option value="test">Эцсийн шалгалтын үе</option>
             </select></div>
-          {c && <div><label htmlFor="o">Эхлэл</label>
+          {c && <div><label htmlFor="o">Сүүлийн мэдэгдэх сар</label>
             <select id="o" value={c.origin_date} onChange={(e) => nav({ origin: e.target.value })}>
-              {c.origins.map((o) => <option key={o} value={o}>{o}</option>)}
+              {c.origins.map((o) => <option key={o} value={o}>{monthLabel(o, true)}</option>)}
             </select></div>}
         </div>
       )}
@@ -59,20 +60,20 @@ export default function Compare({ params }) {
       {c && (
         <>
           <div className="panel">
-            <p className="small"><b>{c.target_label}</b>, {c.unit}, эхлэл {c.origin_date}</p>
+            <p className="small"><b>{c.target_label}</b>, {c.unit} / сар, сүүлийн мэдэгдэх сар {monthLabel(c.origin_date, true)}</p>
             <Plot data={traces} useResizeHandler style={{ width: "100%", height: 380 }} config={{ displayModeBar: false, responsive: true }}
-              layout={plotLayout({ shapes: [{ type: "line", x0: c.origin_date, x1: c.origin_date, yref: "paper", y0: 0, y1: 1, line: { dash: "dot", width: 1, color: "#7b8a92" } }] })} />
+              layout={plotLayout({ xaxis: { type: "date", tickformat: "%Y.%m", gridcolor: "rgba(128,140,150,0.15)" }, shapes: [{ type: "line", x0: c.origin_date, x1: c.origin_date, yref: "paper", y0: 0, y1: 1, line: { dash: "dot", width: 1, color: "#7b8a92" } }] })} />
           </div>
           <div className="panel table-wrap">
             <table>
-              <thead><tr><th>Загвар</th>{[7, 14, 30].map((h) => <th key={h} className="num">MASE H = {h}</th>)}<th className="num">Bias H = 30</th></tr></thead>
+              <thead><tr><th>Арга</th>{HORIZONS.map(([h, l]) => <th key={h} className="num">Сарын алдаа: {l}</th>)}<th className="num">Хэлбийлт: улирал</th></tr></thead>
               <tbody>{c.runs.map((r) => (
-                <tr key={r.run_id}><td>{MODEL_LABELS[r.model] || r.model}{r.role === "baseline" ? " (суурь)" : ""}</td>
-                  {[7, 14, 30].map((h) => { const m = r.metrics[h]?.MASE; return <td key={h} className="num" title={m?.undefined_reason || ""}>{m ? (m.value === null ? "тодорхойгүй" : fmt(m.value, 3)) : "—"}</td>; })}
-                  <td className="num">{fmt(r.metrics[30]?.Bias?.value, 2)}</td></tr>))}
+                <tr key={r.run_id}><td>{runLabel(r)}</td>
+                  {HORIZONS.map(([h]) => { const m = r.metrics[h]?.WAPE; return <td key={h} className="num" title={m?.undefined_reason || (m ? "" : "энэ эхлэлээс бүтэн хугацаа ажиглагдаагүй")}>{m ? (m.value === null ? "тодорхойгүй" : pct(m.value)) : "—"}</td>; })}
+                  <td className="num">{fmt(r.metrics[3]?.Bias?.value, 1)}</td></tr>))}
               </tbody>
             </table>
-            <p className="small muted">Нэг эхлэлийн алдаа санамсаргүй хэлбэлзэлтэй; загварын сонголтыг бүх эхлэл, цувааны дунджаар хийдэг (Туршилтын дэлгэц).</p>
+            <p className="small muted">«—» = энэ эхлэлээс тухайн хугацаа бүтэн ажиглагдаагүй (жишээ нь жилийн алдааг зөвхөн эхний эхлэлээс хэмжинэ). Нэг эхлэлийн алдаа санамсаргүй хэлбэлзэлтэй; загварын сонголтыг бүх эхлэл, цувааны дунджаар хийдэг (Туршилтын дэлгэц).</p>
           </div>
         </>
       )}

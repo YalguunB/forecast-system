@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { api } from "../api.js";
 import { go } from "../App.jsx";
-import { ErrorNote, JobProgress, useLoad } from "../components.jsx";
+import { ErrorNote, Intro, JobProgress, useLoad } from "../components.jsx";
 
 const FIELD_LABELS = {
-  txn_date: "Огноо", product_id: "Бүтээгдэхүүний код", branch_id: "Салбарын код", qty: "Хэмжээ",
+  txn_date: "Огноо", product_id: "Бүтээгдэхүүний код", product_name: "Бүтээгдэхүүний нэр", product_category: "Бүтээгдэхүүний ангилал", branch_id: "Салбарын код", qty: "Хэмжээ",
   unit: "Хэмжих нэгж", txn_id: "Гүйлгээний дугаар", amount: "Мөнгөн дүн", is_return: "Буцаалтын тэмдэг",
 };
 const AUX = [
@@ -26,6 +26,8 @@ export default function Import() {
   const [mapping, setMapping] = useState({});
   const [dateFormat, setDateFormat] = useState("%Y-%m-%d");
   const [conv, setConv] = useState("");
+  const [defBranch, setDefBranch] = useState("ALL");
+  const [defUnit, setDefUnit] = useState("ширхэг");
   const [err, setErr] = useState(null);
   const [job, setJob] = useState(null);
   const [dup, setDup] = useState(null);
@@ -45,6 +47,7 @@ export default function Import() {
       const p = await api.upload(`/datasets/${id}/preview`, f);
       setPreview(p);
       setMapping(p.suggested_mapping);
+      setDateFormat(p.suggested_date_format || "");
       setStep(2);
     } catch (x) { setErr(x); }
   };
@@ -56,6 +59,8 @@ export default function Import() {
     f.append("mapping", JSON.stringify(mapping));
     if (dateFormat) f.append("date_format", dateFormat);
     if (conv.trim()) f.append("unit_conversions", conv);
+    if (!mapping.branch_id) f.append("default_branch", defBranch);
+    if (!mapping.unit) f.append("default_unit", defUnit);
     f.append("force", force ? "true" : "false");
     for (const [k, v] of Object.entries(aux)) if (v) f.append(k, v);
     try {
@@ -70,8 +75,8 @@ export default function Import() {
 
   return (
     <>
-      <h1>Өгөгдөл импортлох</h1>
-      <p className="muted">Гүйлгээний CSV/Excel файл оруулахад өөрчлөгдөхгүй хувилбар үүсч, чанарын шалгалт автоматаар ажиллана.</p>
+      <h1>Өгөгдөл оруулах</h1>
+
       <ol className="ladder" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
         {["Файл сонгох", "Талбар зураглах", "Шалгалтын үр дүн"].map((t, i) => (
           <li key={t} className={step === i + 1 ? "current" : step > i + 1 ? "done" : ""}>{t}</li>
@@ -120,10 +125,26 @@ export default function Import() {
               </div>
             ))}
           </div>
+          {(!mapping.branch_id || !mapping.unit) && (
+            <div className="row" style={{ marginTop: "1rem" }}>
+              {!mapping.branch_id && (
+                <div className="grow">
+                  <label htmlFor="db">Салбар зураглаагүй — бүх мөрийн салбар</label>
+                  <input id="db" value={defBranch} onChange={(e) => setDefBranch(e.target.value)} />
+                </div>
+              )}
+              {!mapping.unit && (
+                <div className="grow">
+                  <label htmlFor="du">Нэгж зураглаагүй — бүх мөрийн нэгж</label>
+                  <input id="du" value={defUnit} onChange={(e) => setDefUnit(e.target.value)} />
+                </div>
+              )}
+            </div>
+          )}
           <div className="row" style={{ marginTop: "1rem" }}>
             <div className="grow">
               <label htmlFor="df">Огнооны хэлбэр</label>
-              <input id="df" value={dateFormat} onChange={(e) => setDateFormat(e.target.value)} placeholder="%Y-%m-%d" />
+              <input id="df" value={dateFormat} onChange={(e) => setDateFormat(e.target.value)} placeholder="Хоосон бол автоматаар танина" />
             </div>
             <div className="grow">
               <label htmlFor="cv">Нэгжийн хөрвүүлэлт (JSON, заавал биш)</label>

@@ -9,9 +9,20 @@ export const session = {
   clear() { try { sessionStorage.removeItem("fc_session"); } catch { /* */ } },
 };
 
+const STATUS_TEXT = {
+  0: "Сервертэй холбогдож чадсангүй. API ажиллаж байгаа эсэхийг шалгана уу.",
+  401: "Нэвтрэх хугацаа дууссан. Дахин нэвтэрнэ үү.",
+  403: "Танд энэ үйлдлийг хийх эрх алга. Админд хандана уу.",
+  404: "Хайсан зүйл олдсонгүй. Хэрэв шинэ хуудас бол API-г дахин эхлүүлсэн эсэхээ шалгана уу.",
+  409: "Энэ үйлдлийг одоогийн төлөвт хийх боломжгүй.",
+  413: "Файл хэт том байна.",
+  422: "Оруулсан мэдээлэл буруу байна. Талбаруудыг шалгана уу.",
+  500: "Серверт алдаа гарлаа. API-ийн терминал дээрх алдааг харна уу.",
+};
+
 export class ApiError extends Error {
   constructor(status, body) {
-    super(body?.message || `HTTP ${status}`);
+    super(body?.message || STATUS_TEXT[status] || `Алдаа гарлаа (код ${status})`);
     this.status = status;
     this.code = body?.code;
     this.details = body?.details;
@@ -25,7 +36,12 @@ async function request(method, path, { json, form, raw } = {}) {
   let body;
   if (json !== undefined) { headers["Content-Type"] = "application/json"; body = JSON.stringify(json); }
   if (form) body = form;
-  const res = await fetch(BASE + path, { method, headers, body });
+  let res;
+  try {
+    res = await fetch(BASE + path, { method, headers, body });
+  } catch {
+    throw new ApiError(0, {});
+  }
   if (res.status === 401 && s) { session.clear(); window.location.hash = "#/login"; }
   if (raw) {
     if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => ({})));

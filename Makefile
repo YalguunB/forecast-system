@@ -1,8 +1,4 @@
 .PHONY: up down data demo test
-up:      ## Бүх үйлчилгээг асаах
-	docker compose up -d --build
-down:
-	docker compose down
 data:    ## Синтетик өгөгдөл үүсгэх
 	python3 scripts/gen_synthetic.py --out data/synthetic --seed 42
 demo: data   ## API-аар демо урсгал ажиллуулах (ADMIN_PASSWORD .env-ээс)

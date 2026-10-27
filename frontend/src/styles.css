@@ -142,3 +142,75 @@ tr.clickable:hover td { background: var(--sky-soft); }
 .tabs button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
 .day-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(10px, 1fr)); gap: 2px; }
 .day-grid span { aspect-ratio: 1; border-radius: 2px; }
+
+td.clip { max-width: 28rem; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+
+/* Тайлангийн самбар */
+.dash h1 { margin-bottom: 0; }
+.dash-head { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; }
+.slicers { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-m); padding: 0.75rem 1rem; margin-bottom: 1rem; }
+.chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.chip { background: var(--surface); color: var(--ink-2); border: 1px solid var(--line); padding: 0.45rem 0.7rem; display: inline-flex; align-items: center; gap: 0.4rem; }
+.chip i { width: 0.7rem; height: 0.7rem; border-radius: 2px; display: inline-block; }
+.chip.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-m); padding: 0.9rem 1rem; display: flex; flex-direction: column; gap: 0.15rem; border-top: 3px solid var(--sky); }
+.kpi-label { font-size: var(--step-0); color: var(--ink-2); }
+.kpi b { font-size: 1.6rem; font-weight: 600; letter-spacing: -0.01em; }
+.kpi-sub { font-size: 0.8rem; color: var(--ink-3); }
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-m); padding: 0.9rem 1rem 0.75rem; min-width: 0; }
+.tile.wide { grid-column: span 2; }
+.tile h3 { margin: 0 0 0.25rem; font-size: var(--step-0); font-weight: 600; color: var(--ink); }
+@media (max-width: 1100px) { .tiles { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 760px) { .tiles { grid-template-columns: 1fr; } .tile.wide { grid-column: auto; } }
+@media print {
+  .rail, .no-print { display: none !important; }
+  .shell { display: block; }
+  main { padding: 0; max-width: none; }
+  body { background: #fff; }
+  .tile, .kpi, .panel { break-inside: avoid; }
+}
+
+/* Тусламж «?» */
+.help { display: inline-flex; align-items: center; justify-content: center; width: 1.05rem; height: 1.05rem; margin-left: 0.3rem;
+  border-radius: 50%; border: 1px solid var(--ink-3); color: var(--ink-3); font-size: 0.7rem; font-weight: 600; cursor: help;
+  position: relative; vertical-align: 0.1em; line-height: 1; }
+.help:hover, .help:focus { color: var(--sky); border-color: var(--sky); outline: none; }
+.help-pop { display: none; position: absolute; z-index: 20; left: 50%; top: 1.5rem; transform: translateX(-50%); width: 18rem;
+  background: var(--ink); color: #fff; font-size: 0.8rem; font-weight: 400; line-height: 1.45; padding: 0.6rem 0.75rem;
+  border-radius: var(--radius-s); text-align: left; white-space: normal; box-shadow: 0 4px 14px rgba(0,0,0,0.18); }
+.help:hover .help-pop, .help:focus .help-pop { display: block; }
+.intro { background: var(--sky-soft); border-radius: var(--radius-m); padding: 0.8rem 1rem; margin: 0.25rem 0 1.25rem; font-size: var(--step-0); color: var(--ink); max-width: 80ch; }
+.intro p { margin: 0.2rem 0; }
+.intro ol { margin: 0.3rem 0 0; padding-left: 1.2rem; }
+
+/* Таамаглалын товч дүгнэлт */
+.summary { display: flex; gap: 1.25rem; align-items: flex-start; background: var(--surface); border: 1px solid var(--line);
+  border-left: 4px solid var(--sky); border-radius: var(--radius-m); padding: 1rem 1.25rem; margin-bottom: 1rem; }
+.summary .big { font-size: 2rem; font-weight: 700; line-height: 1.1; letter-spacing: -0.01em; white-space: nowrap; }
+.summary .big small { font-size: var(--step-0); font-weight: 400; color: var(--ink-2); display: block; letter-spacing: 0; }
+.summary p { margin: 0.15rem 0; font-size: var(--step-1); }
+.grade { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: var(--step-0); font-weight: 600; }
+.grade.ok { background: var(--ok-soft); color: var(--ok); }
+.grade.warn { background: var(--saffron-soft); color: var(--saffron); }
+.grade.bad { background: var(--danger-soft); color: var(--danger); }
+
+/* Нүүр: ажлын дараалал */
+.flow { list-style: none; padding: 0; margin: 0 0 1.5rem; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; }
+.flow li { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-m); padding: 1rem; display: flex; flex-direction: column; gap: 0.4rem; }
+.flow li .n { flex: 0 0 auto !important; width: 1.8rem; height: 1.8rem; border-radius: 50%; display: grid; place-items: center; font-weight: 700; background: var(--paper); color: var(--ink-2); }
+.flow li.done .n { background: var(--ok); color: #fff; }
+.flow li.next { border-color: var(--sky); box-shadow: 0 0 0 1px var(--sky); }
+.flow li.next .n { background: var(--sky); color: #fff; }
+.flow li b { font-size: var(--step-1); }
+.flow li span { font-size: var(--step-0); color: var(--ink-2); flex: 1; }
+.flow li button { align-self: flex-start; }
+@media (max-width: 900px) { .flow { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .flow { grid-template-columns: 1fr; } }
+.gloss dt { font-weight: 600; margin-top: 0.9rem; }
+.gloss dd { margin: 0.2rem 0 0; color: var(--ink-2); max-width: 75ch; }
+
+/* Нийлбэр мөр, ангиллын өнгөт тэмдэг (тайлан) */
+tr.total td { border-top: 2px solid var(--line, #d5dadd); }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: baseline; }

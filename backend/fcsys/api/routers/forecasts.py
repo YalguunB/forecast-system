@@ -7,9 +7,10 @@ import pandas as pd
 from fastapi import APIRouter, Depends, Query
 
 from ...db import jsonb
-from ...engine.grid import TARGET_LABELS, target_series
+from ...engine.grid import TARGET_LABELS
+from ...engine.monthly import HORIZONS, PERIOD_LABELS, add_months, build_monthly, last_complete_month, period_totals
 from ...engine.store import load_daily
-from ..core import ApiError, get_conn, not_found, require
+from ..core import ApiError, assert_branch, get_conn, not_found, require, require_monthly, scope_sql
 
 router = APIRouter(tags=["forecasts"])
 
@@ -23,6 +24,7 @@ def _exp(conn, eid: int) -> dict:
                      "WHERE e.id=%s", (eid,)).fetchone()
     if not e:
         raise not_found("Туршилт", eid)
+    require_monthly(e)
     return e
 
 
@@ -55,10 +57,11 @@ def _run_for(conn, eid: int, sid: int, horizon: int, split: str, run_id: int | N
 @router.get("/forecasts/series")
 def experiment_series(experiment_id: int, conn=Depends(get_conn), user=Depends(require("forecast_view"))):
     rows = conn.execute(
-        "SELECT i.series_id, s.product_id, s.branch_id, s.unit, p.class, p.zero_share FROM experiment.series_sample_item i "
+        "SELECT i.series_id, s.product_id, s.product_name, s.branch_id, s.unit, p.class, p.zero_share FROM experiment.series_sample_item i "
         "JOIN experiment.series_sample ss ON ss.id=i.sample_id JOIN curated.series s ON s.id=i.series_id "
         "LEFT JOIN curated.series_profile p ON p.experiment_id=ss.experiment_id AND p.series_id=i.series_id "
-        "WHERE ss.experiment_id=%s AND i.included ORDER BY s.product_id, s.branch_id", (experiment_id,)).fetchall()
+        "WHERE ss.experiment_id=%s AND i.included" + scope_sql(user)[0] +
+        " ORDER BY coalesce(s.product_name, s.product_id), s.branch_id", [experiment_id, *scope_sql(user)[1]]).fetchall()
     sel = conn.execute("SELECT ms.series_id, ms.horizon, r.model FROM experiment.model_selection ms "
                        "JOIN experiment.run r ON r.run_id=ms.run_id WHERE ms.experiment_id=%s", (experiment_id,)).fetchall()
     m: dict = {}
@@ -69,19 +72,36 @@ def experiment_series(experiment_id: int, conn=Depends(get_conn), user=Depends(r
     return rows
 
 
+def _month_rows(table, start=None, end=None, after=None):
+    out = []
+    for m, r in table.iterrows():
+        if (start is not None and m < start) or (end is not None and m > end):
+            continue
+        out.append({"month": m.date(), "value": None if pd.isna(r["y"]) else float(r["y"]),
+                    "reason": r["reason"] if pd.isna(r["y"]) else None,
+                    "n_gap": int(r["n_gap"]), "n_stockout": int(r["n_stockout"]),
+                    **({"after_origin": bool(m > after)} if after is not None else {})})
+    return out
+
+
 @router.get("/forecasts")
-def get_forecast(experiment_id: int, series: int, horizon: int = Query(30), split: str = Query("live"),
-                 run_id: int | None = None, origin_date: dt.date | None = None, history_days: int = Query(120, le=800),
+def get_forecast(experiment_id: int, series: int, horizon: int = Query(12), split: str = Query("live"),
+                 run_id: int | None = None, origin_date: dt.date | None = None, history_months: int = Query(36, le=240),
                  conn=Depends(get_conn), user=Depends(require("forecast_view"))):
-    """FR-F1, FR-F2: хариу нь зорилтын нэр, нэгж, эхлэл, run-ийн мэдээллийг үргэлж агуулна."""
-    if horizon not in (7, 14, 30) or split not in ("validation", "test", "live"):
-        raise ApiError(422, "invalid_params", "horizon ∈ {7,14,30}, split ∈ {validation,test,live}")
+    """FR-F1, FR-F2, FR-04: сарын таамаглал ба хугацааны (сар, улирал, жил) нийлбэр. Хариу нь зорилтын нэр,
+    нэгж, эхлэл, run-ийн мэдээллийг үргэлж агуулна."""
+    if horizon not in HORIZONS or split not in ("validation", "test", "live"):
+        raise ApiError(422, "invalid_params", "horizon ∈ {1, 3, 12} (сар, улирал, жил), split ∈ {validation, test, live}")
     e = _exp(conn, experiment_id)
     s = _series(conn, series)
+    assert_branch(user, s["branch_id"])
     run = _run_for(conn, experiment_id, series, horizon, split, run_id)
     origins = [r["origin_date"] for r in conn.execute(
         "SELECT DISTINCT origin_date FROM forecast.forecast_value WHERE run_id=%s AND series_id=%s AND split=%s "
         "ORDER BY 1", (run["run_id"], series, split)).fetchall()]
+    if split != "live":   # өнгөрсөнд: зөвхөн бүтэн хугацаа ажиглагдсан эхлэл (хэмжүүр тэдгээрт л бий)
+        last = last_complete_month(e["date_max"])
+        origins = [o for o in origins if add_months(o, horizon) <= last] or origins
     if not origins:
         raise ApiError(404, "no_forecast", "Энэ цуваанд таамаглал алга")
     origin = origin_date if origin_date in origins else origins[-1]
@@ -89,21 +109,22 @@ def get_forecast(experiment_id: int, series: int, horizon: int = Query(30), spli
                       "series_id=%s AND split=%s AND origin_date=%s AND h <= %s ORDER BY h",
                       (run["run_id"], series, split, origin, horizon)).fetchall()
     d = load_daily(conn, e["dataset_version_id"], [series])[series]
-    y = target_series(d, e["target"])
-    start = pd.Timestamp(origin) - pd.Timedelta(days=history_days - 1)
-    hist_mask = (d["day"] >= start) & (d["day"] <= pd.Timestamp(origin))
-    history = [{"day": r.day.date(), "value": None if pd.isna(yv) else float(yv), "sales_qty": float(r.sales_qty),
-                "state": r.day_state} for r, yv in zip(d[hist_mask].itertuples(), y[hist_mask.values].values)]
-    actual = []
-    if split != "live":
-        end = pd.Timestamp(origin) + pd.Timedelta(days=horizon)
-        am = (d["day"] > pd.Timestamp(origin)) & (d["day"] <= end)
-        actual = [{"day": r.day.date(), "value": None if pd.isna(yv) else float(yv), "state": r.day_state}
-                  for r, yv in zip(d[am].itertuples(), y[am.values].values)]
+    table = build_monthly(d, e["target"], e["date_max"])
+    o = pd.Timestamp(origin)
+    history = _month_rows(table, add_months(o, -(history_months - 1)), o)
+    actual = _month_rows(table, add_months(o, 1), add_months(o, horizon)) if split != "live" else []
     adjusted = conn.execute(
         "SELECT DISTINCT ON (a.target_date) a.target_date, a.adjusted_value, a.original_value, a.reason, a.created_at, "
         "u.username FROM governance.forecast_adjustment a JOIN governance.app_user u ON u.id=a.user_id "
         "WHERE a.run_id=%s AND a.series_id=%s ORDER BY a.target_date, a.created_at DESC", (run["run_id"], series)).fetchall()
+    adj = {a["target_date"]: a["adjusted_value"] for a in adjusted}
+    y_hat = [r["y_hat"] for r in fc]
+    final = [adj.get(r["target_date"], r["y_hat"]) for r in fc]
+    act = [a["value"] for a in actual]
+    totals = {"forecast": period_totals(y_hat, (horizon,)).get(horizon),
+              "adjusted": period_totals(final, (horizon,)).get(horizon) if adj else None,
+              "actual": (sum(act) if act and len(act) == horizon and all(v is not None for v in act) else None),
+              "months": horizon, "label": PERIOD_LABELS[horizon]}
     test_metrics = conn.execute(
         "SELECT em.metric, em.value, em.n_pairs, em.undefined_reason, r.model, r.role FROM forecast.error_metric em "
         "JOIN experiment.run r ON r.run_id=em.run_id WHERE r.experiment_id=%s AND r.phase='test' AND em.series_id=%s "
@@ -114,14 +135,18 @@ def get_forecast(experiment_id: int, series: int, horizon: int = Query(30), spli
                         "AND fv.series_id=%s ORDER BY r.run_id", (experiment_id, split, series)).fetchall()
     states = d["day_state"].value_counts().to_dict()
     return {
+        "grain": "month",
         "target": e["target"], "target_label": TARGET_LABELS[e["target"]], "unit": s["unit"],
-        "series": {"id": s["id"], "product_id": s["product_id"], "branch_id": s["branch_id"]},
+        "series": {"id": s["id"], "product_id": s["product_id"], "product_name": s["product_name"],
+                   "product_category": s.get("product_category"), "branch_id": s["branch_id"]},
         "experiment": {"id": e["id"], "name": e["name"], "status": e["status"], "dataset": e["dataset"],
                        "version_no": e["version_no"], "protocol_hash": e["protocol_hash"]},
         "run_id": run["run_id"], "model": run["model"], "params": run["params"], "role": run["role"],
         "split": split, "origin_date": origin, "origins": origins, "horizon": horizon,
+        "period_label": PERIOD_LABELS[horizon], "period_total": totals,
         "history": history, "actual": actual,
-        "forecast": fc, "interval": {"available": any(r["q_lo"] is not None for r in fc), "level": 0.8},
+        "forecast": fc, "interval": {"available": any(r["q_lo"] is not None for r in fc), "level": 0.8,
+                                     "note": "Интервал сар бүрд; хугацааны нийлбэрт интервал нэмэгдэхгүй."},
         "adjusted": adjusted, "test_metrics": test_metrics, "available_runs": runs,
         "data_states": {k: {"n": int(v), "label": STATE_LABELS[k]} for k, v in states.items()},
     }
@@ -133,6 +158,7 @@ def compare(experiment_id: int, series: int, split: str = "validation", origin_d
     """FR-F4: загваруудыг ижил эхлэл дээр харьцуулна."""
     e = _exp(conn, experiment_id)
     s = _series(conn, series)
+    assert_branch(user, s["branch_id"])
     origins = [r["origin_date"] for r in conn.execute(
         "SELECT DISTINCT fv.origin_date FROM forecast.forecast_value fv JOIN experiment.run r ON r.run_id=fv.run_id "
         "WHERE r.experiment_id=%s AND fv.series_id=%s AND fv.split=%s ORDER BY 1", (experiment_id, series, split)).fetchall()]
@@ -147,7 +173,7 @@ def compare(experiment_id: int, series: int, split: str = "validation", origin_d
     metrics = conn.execute(
         "SELECT em.run_id, em.horizon, em.metric, em.value, em.undefined_reason FROM forecast.error_metric em "
         "JOIN experiment.run r ON r.run_id=em.run_id WHERE r.experiment_id=%s AND em.series_id=%s AND em.split=%s "
-        "AND em.origin_date=%s AND em.metric IN ('MASE','MAE','Bias','WAPE')", (experiment_id, series, split, origin)).fetchall()
+        "AND em.origin_date=%s AND em.metric IN ('WAPE','MAE','Bias','SUM_APE')", (experiment_id, series, split, origin)).fetchall()
     runs: dict = {}
     for r in rows:
         runs.setdefault(r["run_id"], {"run_id": r["run_id"], "model": r["model"], "params": r["params"],
@@ -158,13 +184,11 @@ def compare(experiment_id: int, series: int, split: str = "validation", origin_d
             runs[m["run_id"]]["metrics"].setdefault(str(m["horizon"]), {})[m["metric"]] = {
                 "value": m["value"], "undefined_reason": m["undefined_reason"]}
     d = load_daily(conn, e["dataset_version_id"], [series])[series]
-    y = target_series(d, e["target"])
     o = pd.Timestamp(origin)
-    win = (d["day"] > o - pd.Timedelta(days=60)) & (d["day"] <= o + pd.Timedelta(days=30))
-    series_values = [{"day": r.day.date(), "value": None if pd.isna(v) else float(v), "state": r.day_state,
-                      "after_origin": r.day > o} for r, v in zip(d[win].itertuples(), y[win.values].values)]
+    table = build_monthly(d, e["target"], e["date_max"])
+    series_values = _month_rows(table, add_months(o, -23), add_months(o, 12), after=o)
     return {"target_label": TARGET_LABELS[e["target"]], "unit": s["unit"],
-            "series": {"id": s["id"], "product_id": s["product_id"], "branch_id": s["branch_id"]},
+            "series": {"id": s["id"], "product_id": s["product_id"], "product_name": s["product_name"], "branch_id": s["branch_id"]},
             "split": split, "origin_date": origin, "origins": origins, "values": series_values,
             "runs": list(runs.values())}
 
@@ -177,19 +201,20 @@ def explain(run_id: int, series: int, conn=Depends(get_conn), user=Depends(requi
                        "ON e.id=r.experiment_id WHERE r.run_id=%s", (run_id,)).fetchone()
     if not run:
         raise not_found("Run", run_id)
+    assert_branch(user, _series(conn, series)["branch_id"])
     d = load_daily(conn, run["dataset_version_id"], [series]).get(series)
     if d is None:
         raise not_found("Цуваа", series)
     per_origin = conn.execute(
         "SELECT origin_date, horizon, metric, value, undefined_reason FROM forecast.error_metric WHERE run_id=%s "
-        "AND series_id=%s AND origin_date IS NOT NULL AND metric IN ('MAE','MASE','Bias') ORDER BY origin_date, horizon",
+        "AND series_id=%s AND origin_date IS NOT NULL AND metric IN ('MAE','WAPE','Bias','SUM_AE') ORDER BY origin_date, horizon",
         (run_id, series)).fetchall()
     failures = conn.execute("SELECT origin_date, reason, fallback_model FROM forecast.run_failure WHERE run_id=%s "
                             "AND series_id=%s", (run_id, series)).fetchall()
     windows = []
     for o in sorted({r["origin_date"] for r in per_origin}):
         o_ts = pd.Timestamp(o)
-        w = d[(d["day"] > o_ts) & (d["day"] <= o_ts + pd.Timedelta(days=30))]
+        w = d[(d["day"] >= add_months(o_ts, 1)) & (d["day"] < add_months(o_ts, 13))]
         windows.append({"origin_date": o, "states": w["day_state"].value_counts().to_dict(),
                         "zero_days": int((w["sales_qty"] == 0).sum())})
     profile = conn.execute("SELECT * FROM curated.series_profile WHERE experiment_id=%s AND series_id=%s",
@@ -198,6 +223,6 @@ def explain(run_id: int, series: int, conn=Depends(get_conn), user=Depends(requi
             "target_windows": windows, "failures": failures, "profile": profile,
             "state_labels": STATE_LABELS,
             "feature_behaviour": {"available": False,
-                                  "note": "Статистик суурь загварт (naive, ETS, Croston) шинжийн хувь нэмэр байхгүй. "
+                                  "note": "Статистик загварт (гулсах дундаж, ETS, SARIMA, Croston) шинжийн хувь нэмэр байхгүй. "
                                           "ML загвар нэмэгдэхэд «загварын зан төлөв» хэлбэрээр харуулна; "
                                           "шалтгаант нөлөө гэж тайлбарлахгүй."}}

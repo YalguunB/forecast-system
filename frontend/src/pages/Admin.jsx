@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { api } from "../api.js";
 import { ErrorNote, useLoad } from "../components.jsx";
-import { ROLE_LABELS, VERSION_STATUS } from "../labels.js";
+import { ROLE_DESC, ROLE_LABELS, VERSION_STATUS, branchText } from "../labels.js";
 
 // UC-09: хэрэглэгч, архив, аудит
 export default function Admin() {
   const [tab, setTab] = useState("users");
   return (
     <>
-      <h1>Удирдлага</h1>
+      <h1>Хэрэглэгч ба тохиргоо</h1>
       <div className="tabs" role="tablist">
         {[["users", "Хэрэглэгч"], ["archive", "Архив"], ["audit", "Аудит"]].map(([k, l]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>
@@ -21,40 +21,88 @@ export default function Admin() {
   );
 }
 
+function BranchPicker({ value, onChange, branches, id }) {
+  const all = value.includes("*");
+  const toggle = (b) => onChange(value.includes(b) ? value.filter((x) => x !== b) : [...value.filter((x) => x !== "*"), b]);
+  return (
+    <div className="chips" id={id}>
+      <button type="button" className={`chip ${all ? "on" : ""}`} aria-pressed={all} onClick={() => onChange(all ? [] : ["*"])}>Бүх салбар</button>
+      {branches.map((b) => (
+        <button type="button" key={b} className={`chip ${!all && value.includes(b) ? "on" : ""}`} aria-pressed={!all && value.includes(b)}
+                disabled={all} onClick={() => toggle(b)}>{b}</button>
+      ))}
+      {!branches.length && <span className="small muted">Өгөгдөл оруулаагүй тул салбарын жагсаалт хоосон — «Бүх салбар» сонгоно уу.</span>}
+    </div>
+  );
+}
+
 function Users() {
   const users = useLoad(() => api.get("/users"), []);
-  const [f, setF] = useState({ username: "", full_name: "", password: "", roles: [] });
+  const branches = useLoad(() => api.get("/branches"), []);
+  const empty = { username: "", full_name: "", password: "", role: "manager", branches: ["*"] };
+  const [f, setF] = useState(empty);
+  const [editing, setEditing] = useState(null);
   const [err, setErr] = useState(null);
-  const toggle = (u, r) => api.patch(`/users/${u.id}`, { roles: u.roles.includes(r) ? u.roles.filter((x) => x !== r) : [...u.roles, r] }).then(users.reload).catch(setErr);
+  const [msg, setMsg] = useState(null);
+  const save = (u, patch) => api.patch(`/users/${u.id}`, patch).then(() => { users.reload(); setMsg(`«${u.username}» шинэчлэгдлээ.`); }).catch(setErr);
   return (
     <>
+      <div className="intro">
+        {Object.entries(ROLE_LABELS).map(([k, l]) => <p key={k}><b>{l}</b> — {ROLE_DESC[k]}</p>)}
+      </div>
+      <ErrorNote error={err} />
+      {msg && <div className="notice">{msg}</div>}
       <div className="panel table-wrap">
-        <ErrorNote error={err} />
         <table>
-          <thead><tr><th>Нэвтрэх нэр</th><th>Нэр</th>{Object.values(ROLE_LABELS).map((l) => <th key={l}>{l}</th>)}<th>Идэвхтэй</th></tr></thead>
-          <tbody>{(users.data || []).map((u) => (
-            <tr key={u.id}><td>{u.username}</td><td>{u.full_name}</td>
-              {Object.keys(ROLE_LABELS).map((r) => <td key={r}><input type="checkbox" aria-label={`${u.username}: ${ROLE_LABELS[r]}`} checked={u.roles.includes(r)} onChange={() => toggle(u, r)} /></td>)}
-              <td><input type="checkbox" aria-label={`${u.username} идэвхтэй`} checked={u.is_active} onChange={() => api.patch(`/users/${u.id}`, { is_active: !u.is_active }).then(users.reload)} /></td>
-            </tr>))}
+          <thead><tr><th>Нэвтрэх нэр</th><th>Нэр</th><th>Үүрэг</th><th>Хариуцах салбар</th><th>Идэвхтэй</th></tr></thead>
+          <tbody>{(users.data || []).map((u) => {
+            const role = u.roles[0] || "";
+            return (
+              <tr key={u.id}>
+                <td>{u.username}</td><td>{u.full_name}</td>
+                <td>
+                  <select aria-label={`${u.username}: үүрэг`} value={role}
+                          onChange={(e) => save(u, { roles: [e.target.value], ...(e.target.value === "manager" && !u.branches?.length ? { branches: ["*"] } : {}) })}>
+                    {!role && <option value="">—</option>}
+                    {Object.entries(ROLE_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                  </select>
+                </td>
+                <td>
+                  {role !== "manager" ? <span className="muted small">{role === "executive" ? "Бүх салбар (харах)" : "—"}</span>
+                    : editing === u.id
+                      ? <BranchPicker value={u.branches || []} branches={branches.data || []} onChange={(b) => save(u, { branches: b })} />
+                      : <button className="quiet" onClick={() => setEditing(u.id)}>{branchText(u.branches)} — өөрчлөх</button>}
+                </td>
+                <td><input type="checkbox" aria-label={`${u.username} идэвхтэй`} checked={u.is_active} onChange={() => save(u, { is_active: !u.is_active })} /></td>
+              </tr>);
+          })}
           </tbody>
         </table>
       </div>
       <div className="panel">
         <h3 style={{ marginTop: 0 }}>Шинэ хэрэглэгч</h3>
         <div className="row">
-          <div className="grow"><label htmlFor="un">Нэвтрэх нэр</label><input id="un" value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} /></div>
-          <div className="grow"><label htmlFor="fn">Нэр</label><input id="fn" value={f.full_name} onChange={(e) => setF({ ...f, full_name: e.target.value })} /></div>
+          <div className="grow"><label htmlFor="un">Нэвтрэх нэр (латин үсэг)</label><input id="un" value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} /></div>
+          <div className="grow"><label htmlFor="fn">Овог нэр</label><input id="fn" value={f.full_name} onChange={(e) => setF({ ...f, full_name: e.target.value })} /></div>
           <div className="grow"><label htmlFor="pw">Нууц үг (8+ тэмдэгт)</label><input id="pw" type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></div>
         </div>
-        <div style={{ margin: "0.75rem 0" }}>
-          {Object.entries(ROLE_LABELS).map(([r, l]) => (
-            <label key={r} style={{ display: "inline-flex", gap: 6, marginRight: 14 }}>
-              <input type="checkbox" checked={f.roles.includes(r)} onChange={(e) => setF({ ...f, roles: e.target.checked ? [...f.roles, r] : f.roles.filter((x) => x !== r) })} />{l}
-            </label>
+        <label style={{ marginTop: "0.75rem" }}>Үүрэг</label>
+        <div className="chips">
+          {Object.entries(ROLE_LABELS).map(([k, l]) => (
+            <button type="button" key={k} className={`chip ${f.role === k ? "on" : ""}`} aria-pressed={f.role === k} onClick={() => setF({ ...f, role: k })}>{l}</button>
           ))}
         </div>
-        <button disabled={!f.username || f.password.length < 8 || !f.roles.length} onClick={() => api.post("/users", f).then(() => { setF({ username: "", full_name: "", password: "", roles: [] }); users.reload(); }).catch(setErr)}>Хэрэглэгч нэмэх</button>
+        <p className="small muted" style={{ margin: "0.3rem 0 0" }}>{ROLE_DESC[f.role]}</p>
+        {f.role === "manager" && (
+          <>
+            <label style={{ marginTop: "0.75rem" }}>Хариуцах салбар</label>
+            <BranchPicker value={f.branches} branches={branches.data || []} onChange={(b) => setF({ ...f, branches: b })} />
+          </>
+        )}
+        <button style={{ marginTop: "1rem" }} disabled={!f.username || f.password.length < 8 || (f.role === "manager" && !f.branches.length)}
+          onClick={() => api.post("/users", { username: f.username, full_name: f.full_name, password: f.password, roles: [f.role],
+                                              branches: f.role === "manager" ? f.branches : [] })
+            .then(() => { setMsg(`«${f.username}» нэмэгдлээ.`); setF(empty); users.reload(); }).catch(setErr)}>Хэрэглэгч нэмэх</button>
       </div>
     </>
   );

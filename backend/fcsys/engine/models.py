@@ -1,28 +1,35 @@
-"""models — нэгдсэн интерфейстэй загварууд (FR-M1, Z7, §4.4 «Загварын интерфейс»).
+"""models — нэгдсэн интерфейстэй сарын загварууд (FR-M1, Z7, §4.4 «Загварын интерфейс»).
 
-Энэ хувилбарт: naive, seasonal naive (m = 7), ETS, Croston, SBA.
-SARIMA, Prophet, XGBoost (recursive) дараагийн үе шатанд ижил интерфейсээр нэмэгдэнэ.
+Энэ хувилбарт: гулсах дундаж (суурь загвар), naive, улирлын naive (m = 12), ETS (үндсэн загвар),
+SARIMA, Croston, SBA. Prophet, XGBoost дараагийн үе шатанд ижил интерфейсээр нэмэгдэнэ.
+Цуваа нь сарын эхлэлээр индекслэгдсэн (MS); эхлэл o = мэдэгдэх сүүлийн сар; h = 1..H сар.
 """
 from __future__ import annotations
 
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 
 from .features import fill_for_model
 
+SEASON = 12
+
 
 @dataclass(frozen=True)
 class FitContext:
     series_id: int
-    origin: pd.Timestamp          # сүүлийн мэдэгдэх өдөр o
+    origin: pd.Timestamp          # мэдэгдэх сүүлийн сар o (сарын эхлэл)
     target: str                   # 'sales' | 'demand'
-    horizon: int                  # H, 30 хүртэл
+    horizon: int                  # H, 12 хүртэл сар
     seed: int
-    calendar: pd.DataFrame | None = None     # ирээдүйд мэдэгдэх календарь
-    known_price: pd.DataFrame | None = None  # known_at ≤ origin мөрүүд
+    calendar: pd.DataFrame | None = None
+    known_price: pd.DataFrame | None = None
+
+
+def target_months(origin: pd.Timestamp, horizon: int) -> pd.DatetimeIndex:
+    return pd.date_range(pd.Timestamp(origin) + pd.DateOffset(months=1), periods=horizon, freq="MS")
 
 
 class Forecaster:
@@ -34,11 +41,11 @@ class Forecaster:
         self.params = params
 
     def fit(self, history: pd.Series, ctx: FitContext) -> None:
-        """history: зөвхөн day ≤ ctx.origin мөр (NaN = зорилтоос хасагдсан өдөр)."""
+        """history: зөвхөн сар ≤ ctx.origin мөр (NaN = тодорхойгүй сар)."""
         raise NotImplementedError
 
     def predict(self, ctx: FitContext) -> pd.DataFrame:
-        """Багана: h, target_date, y_hat, q_lo, q_hi (интервалгүй бол NaN)."""
+        """Багана: h, target_date (зорилтот сарын эхлэл), y_hat, q_lo, q_hi (интервалгүй бол NaN)."""
         raise NotImplementedError
 
     def _frame(self, ctx: FitContext, y_hat, q_lo=None, q_hi=None) -> pd.DataFrame:
@@ -46,20 +53,35 @@ class Forecaster:
         y_hat = np.clip(np.asarray(y_hat, dtype=float), 0, None)  # борлуулалт сөрөг байхгүй
         if not np.all(np.isfinite(y_hat)):
             raise ValueError(f"{self.name}: таамаглалд төгсгөлгүй утга гарсан")
-        df = pd.DataFrame({"h": h, "target_date": ctx.origin + pd.to_timedelta(h, unit="D"),
-                           "y_hat": y_hat})
+        df = pd.DataFrame({"h": h, "target_date": target_months(ctx.origin, ctx.horizon), "y_hat": y_hat})
         df["q_lo"] = np.clip(q_lo, 0, None) if q_lo is not None else np.nan
         df["q_hi"] = np.clip(q_hi, 0, None) if q_hi is not None else np.nan
+        if q_lo is not None:
+            df["q_lo"] = np.minimum(df["q_lo"], df["y_hat"])
+            df["q_hi"] = np.maximum(df["q_hi"], df["y_hat"])
         return df
 
 
 def _check_history(history: pd.Series, ctx: FitContext, min_len: int = 1) -> pd.Series:
     if len(history) and history.index.max() > ctx.origin:
-        raise AssertionError("Мэдээллийн алдагдал: түүхэнд эхлэлээс хойших өдөр байна")
-    y = fill_for_model(history)
+        raise AssertionError("Мэдээллийн алдагдал: түүхэнд эхлэлээс хойших сар байна")
+    y = fill_for_model(history, period=SEASON)
     if len(y) < min_len:
-        raise ValueError(f"Түүх хэт богино ({len(y)} < {min_len})")
+        raise ValueError(f"Түүх хэт богино ({len(y)} сар < {min_len})")
     return y
+
+
+class MovingAverage(Forecaster):
+    """Гулсах дундаж (дипломын суурь загвар): сүүлийн window сарын дундаж."""
+    name = "ma"
+
+    def fit(self, history, ctx):
+        w = int(self.params.get("window", 3))
+        y = _check_history(history, ctx, min_len=1)
+        self._level = float(y.values[-w:].mean())
+
+    def predict(self, ctx):
+        return self._frame(ctx, np.full(ctx.horizon, self._level))
 
 
 class Naive(Forecaster):
@@ -73,10 +95,11 @@ class Naive(Forecaster):
 
 
 class SeasonalNaive(Forecaster):
+    """Өнгөрсөн жилийн ижил сарын утга (m = 12)."""
     name = "snaive"
 
     def fit(self, history, ctx):
-        m = int(self.params.get("m", 7))
+        m = int(self.params.get("m", SEASON))
         y = _check_history(history, ctx, min_len=m)
         self._season = y.values[-m:]
         self._m = m
@@ -87,36 +110,59 @@ class SeasonalNaive(Forecaster):
 
 
 class ETS(Forecaster):
-    """statsmodels ETSModel; анхдагч: нэмэх алдаа, долоо хоногийн нэмэх улирал, трендгүй.
-    80%-ийн таамаглалын интервал (q = 0.1, 0.9) гаргана (FR-E4)."""
+    """statsmodels ETSModel (дипломын үндсэн загвар): нэмэх алдаа; улирал (m = 12) нь 24-өөс
+    доошгүй сарын түүхтэй үед л; тренд сонголттой (damped). 80%-ийн интервал (q = 0.1, 0.9)."""
     name = "ets"
     has_interval = True
 
     def fit(self, history, ctx):
         from statsmodels.tsa.exponential_smoothing.ets import ETSModel
-        y = _check_history(history, ctx, min_len=28)
-        y = y.asfreq("D")
+        y = _check_history(history, ctx, min_len=8).asfreq("MS")
         trend = self.params.get("trend")            # None | 'add'
         damped = bool(self.params.get("damped", False)) and trend is not None
-        seasonal = self.params.get("seasonal", "add")
+        seasonal = self.params.get("seasonal", "add") if len(y) >= 2 * SEASON else None
+        self.used_seasonal = seasonal
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             model = ETSModel(y, error="add", trend=trend, damped_trend=damped,
-                             seasonal=seasonal, seasonal_periods=7 if seasonal else None)
+                             seasonal=seasonal, seasonal_periods=SEASON if seasonal else None)
             self._res = model.fit(disp=False, maxiter=200)
 
     def predict(self, ctx):
+        idx = target_months(ctx.origin, ctx.horizon)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            start = ctx.origin + pd.Timedelta(days=1)
-            end = ctx.origin + pd.Timedelta(days=ctx.horizon)
-            pred = self._res.get_prediction(start=start, end=end)
+            pred = self._res.get_prediction(start=idx[0], end=idx[-1])
             sf = pred.summary_frame(alpha=0.2)
         return self._frame(ctx, sf["mean"].values, sf["pi_lower"].values, sf["pi_upper"].values)
 
 
+class SARIMA(Forecaster):
+    """statsmodels SARIMAX: (p,d,q)(P,D,Q,12). Улирлын хэсэг 36-аас доошгүй сарын түүхтэй үед л."""
+    name = "sarima"
+    has_interval = True
+
+    def fit(self, history, ctx):
+        from statsmodels.tsa.statespace.sarimax import SARIMAX
+        y = _check_history(history, ctx, min_len=12).asfreq("MS")
+        order = tuple(self.params.get("order", (1, 1, 1)))
+        seasonal = tuple(self.params.get("seasonal_order", (0, 1, 1))) if len(y) >= 3 * SEASON else (0, 0, 0)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            self._res = SARIMAX(y, order=order, seasonal_order=(*seasonal, SEASON if any(seasonal) else 0),
+                                enforce_stationarity=False, enforce_invertibility=False).fit(disp=False, maxiter=100)
+
+    def predict(self, ctx):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            f = self._res.get_forecast(steps=ctx.horizon)
+            ci = f.conf_int(alpha=0.2)
+        return self._frame(ctx, f.predicted_mean.values, ci.iloc[:, 0].values, ci.iloc[:, 1].values)
+
+
 class Croston(Forecaster):
-    """Croston (1972): эерэг эрэлтийн хэмжээ z ба завсар p-г тусад нь экспоненциал тэгшитгэнэ."""
+    """Croston (1972): эерэг борлуулалтын хэмжээ z ба завсар p-г тусад нь экспоненциал тэгшитгэнэ.
+    Борлуулалтгүй сар олонтой (тасалдсан) цуваанд."""
     name = "croston"
     _bias = 1.0
 
@@ -151,9 +197,9 @@ class SBA(Croston):
 
 
 MODEL_REGISTRY: dict[str, type[Forecaster]] = {
-    m.name: m for m in (Naive, SeasonalNaive, ETS, Croston, SBA)
+    m.name: m for m in (MovingAverage, Naive, SeasonalNaive, ETS, SARIMA, Croston, SBA)
 }
-PLANNED_MODELS = ["sarima", "prophet", "xgboost"]
+PLANNED_MODELS = ["prophet", "xgboost"]
 
 
 def make_model(name: str, params: dict | None = None) -> Forecaster:

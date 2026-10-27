@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import createPlotlyComponent from "react-plotly.js/factory";
 import Plotly from "plotly.js-dist-min";
 import { api, waitJob } from "./api.js";
-import { JOB_STATUS, STATES } from "./labels.js";
+import { GLOSSARY, JOB_STATUS, STATES } from "./labels.js";
 
 export const Plot = createPlotlyComponent(Plotly);
 
@@ -75,3 +75,21 @@ export const plotLayout = (extra = {}) => ({
   hovermode: "x unified",
   ...extra,
 });
+
+// «?» тэмдэг: дарахад/хулгана барихад нэр томьёоны тайлбар гарна
+export function Help({ k, text }) {
+  const g = k ? GLOSSARY[k] : null;
+  const body = text || g?.desc;
+  if (!body) return null;
+  return (
+    <span className="help" tabIndex={0} role="button" aria-label={`${g?.term || "Тайлбар"}: ${body}`}>
+      ?
+      <span className="help-pop" role="tooltip">{g?.term && <b>{g.term}. </b>}{body}</span>
+    </span>
+  );
+}
+
+// Дэлгэц бүрийн дээд талд: энэ хуудас юуны тулд вэ, юу хийх вэ
+export function Intro({ children }) {
+  return <div className="intro">{children}</div>;
+}

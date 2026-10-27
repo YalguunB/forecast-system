@@ -22,6 +22,7 @@ from ..config import get_settings
 from ..db import audit, jsonb
 from . import grid, ingest, validate as dq
 from .evaluate import aggregate_over_origins, make_splits, metrics_for, origins_for
+from .monthly import add_months, last_complete_month, monthly_target
 from .models import FitContext, make_model, run_series
 from .profile import profile_series
 from .protocol import canonical_hash, derive_seed
@@ -65,13 +66,33 @@ def lib_versions() -> dict:
 # import / regrid (UC-01, UC-02)
 # ---------------------------------------------------------------------------
 
-def _series_map(conn, dataset_id: int, daily: pd.DataFrame) -> dict[tuple[str, str], int]:
+def _product_attr(tx: pd.DataFrame, col: str) -> dict[str, str]:
+    """Бүтээгдэхүүний код → нэр / ангилал (хамгийн олон давтагдсан утга). Зураглаагүй бол хоосон."""
+    if col not in tx or tx[col].isna().all():
+        return {}
+    t = tx.dropna(subset=[col])
+    t = t[t[col].astype(str).str.strip() != ""]
+    if t.empty:
+        return {}
+    return t.groupby("product_ext_id")[col].agg(lambda s: s.mode().iloc[0]).to_dict()
+
+
+def _product_names(tx: pd.DataFrame) -> dict[str, str]:
+    return _product_attr(tx, "product_name")
+
+
+def _series_map(conn, dataset_id: int, daily: pd.DataFrame, names: dict | None = None,
+                categories: dict | None = None) -> dict[tuple[str, str], int]:
     pairs = daily[["product_id", "branch_id", "unit"]].drop_duplicates(["product_id", "branch_id"])
+    names = names or {}
+    categories = categories or {}
     for r in pairs.itertuples(index=False):
         conn.execute(
-            "INSERT INTO curated.series (dataset_id, product_id, branch_id, unit) VALUES (%s,%s,%s,%s) "
-            "ON CONFLICT (dataset_id, product_id, branch_id) DO NOTHING",
-            (dataset_id, r.product_id, r.branch_id, r.unit))
+            "INSERT INTO curated.series (dataset_id, product_id, branch_id, unit, product_name, product_category) "
+            "VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT (dataset_id, product_id, branch_id) DO UPDATE "
+            "SET product_name = coalesce(EXCLUDED.product_name, curated.series.product_name), "
+            "    product_category = coalesce(EXCLUDED.product_category, curated.series.product_category)",
+            (dataset_id, r.product_id, r.branch_id, r.unit, names.get(r.product_id), categories.get(r.product_id)))
     rows = conn.execute("SELECT id, product_id, branch_id FROM curated.series WHERE dataset_id = %s",
                         (dataset_id,)).fetchall()
     return {(r["product_id"], r["branch_id"]): r["id"] for r in rows}
@@ -106,7 +127,8 @@ def handle_import(conn, job: dict, url: str) -> None:
     mapping = ver["mapping"]
     set_progress(url, job["id"], stage="Файл уншиж байна")
     raw = ingest.read_table(ver["stored_path"])
-    tx = ingest.parse_transactions(raw, mapping["fields"], mapping.get("date_format"))
+    tx = ingest.parse_transactions(raw, mapping["fields"], mapping.get("date_format"),
+                                   mapping.get("default_branch"), mapping.get("default_unit"))
     copy_rows(conn, "raw.raw_transaction",
               ["dataset_version_id", "source_row", "txn_id", "txn_date", "txn_date_raw", "product_ext_id",
                "branch_ext_id", "qty", "unit", "amount", "is_return"],
@@ -133,7 +155,7 @@ def _build_and_store(conn, ver: dict, tx: pd.DataFrame, res: dq.ValidationResult
     if date_max is None:
         raise JobError("Уншигдах огноотой мөр алга — хувилбарыг ашиглах боломжгүй")
     daily = grid.build_daily(clean, date_max, aux.get("calendar"), aux.get("inventory"))
-    smap = _series_map(conn, ver["dataset_id"], daily)
+    smap = _series_map(conn, ver["dataset_id"], daily, _product_names(clean), _product_attr(clean, "product_category"))
     _write_daily(conn, vid, daily, smap)
     if not regrid:
         _insert_issues(conn, vid, res.issues, smap)
@@ -241,8 +263,8 @@ def handle_validate(conn, job: dict, url: str) -> str:
     if exp["status"] != "validating":
         raise JobError(f"Туршилтын төлөв '{exp['status']}' — validation эхлүүлэх боломжгүй")
     proto = exp["protocol"]
-    sp = make_splits(pd.Timestamp(exp["date_max"]), proto["val_days"], proto["test_days"],
-                     proto["train_min_days"])
+    last = last_complete_month(exp["date_max"])
+    sp = make_splits(last, proto["val_months"], proto["test_months"], proto["train_min_months"])
     vid = exp["dataset_version_id"]
     if exp["target"] == "demand":
         has_inv = conn.execute("SELECT 1 FROM curated.inventory_snapshot WHERE dataset_version_id=%s LIMIT 1",
@@ -250,23 +272,37 @@ def handle_validate(conn, job: dict, url: str) -> str:
         if not has_inv:
             raise JobError("Эрэлтийн (D) зорилтод нөөцийн хүртээмжийн өгөгдөл шаардлагатай (R2, UC-08)")
 
-    # 1. Цувааны дэд багц (FR-D9): дүрэм, seed бүртгэгдэнэ
-    set_progress(url, job["id"], stage="Цувааны дэд багц")
+    # 1. Цувааны дэд багц (FR-D9): дүрэм, seed бүртгэгдэнэ. Өдрийн цуваанаас сарын цуваа (2.1).
+    set_progress(url, job["id"], stage="Сарын цуваа ба дэд багц")
     daily = load_daily(conn, vid)
     rule = proto["sample"]
     seed = int(proto["seed"])
     items, eligible = [], []
     profiles = {}
+    meta = {r["id"]: r for r in conn.execute(
+        "SELECT s.id, s.branch_id, s.product_category FROM curated.series s "
+        "JOIN raw.dataset_version v ON v.dataset_id = s.dataset_id WHERE v.id = %s", (vid,)).fetchall()}
+    monthly: dict[int, pd.Series] = {}
+    longest = 0
     for sid, d in daily.items():
-        first, n_days = d["day"].iloc[0], len(d)
+        info = meta.get(sid, {})
+        if rule.get("branches") and info.get("branch_id") not in rule["branches"]:
+            continue                                   # өөр салбарын цуваа — туршилтад огт хамаарахгүй
+        y = monthly_target(d, exp["target"], exp["date_max"])
+        monthly[sid] = y
+        n_obs = int(y.notna().sum())
+        longest = max(longest, len(y))
         reason = None
-        if n_days < rule["min_length_days"]:
-            reason = f"DQ-09: урт {n_days} < {rule['min_length_days']}"
-        elif first > sp.train_start:
-            reason = f"сургалтын түүх {proto['train_min_days']} хоногоос богино (эхлэл {first.date()})"
+        cat = info.get("product_category") or "Ангилалгүй"
+        if rule.get("categories") and cat not in rule["categories"]:
+            reason = f"ангилал «{cat}» сонгогдоогүй"
+        elif n_obs < rule["min_length_months"]:
+            reason = f"бүтэн сар {n_obs} < {rule['min_length_months']}"
+        elif y.index[0] > sp.train_start:
+            reason = (f"сургалтын түүх {proto['train_min_months']} сараас богино "
+                      f"(эхний бүтэн сар {y.index[0]:%Y-%m})")
         if reason is None:
-            y = grid.target_series(d, exp["target"])
-            prof = profile_series(y.loc[:sp.val_start - pd.Timedelta(days=1)])   # FR-S2: сургалтаас л
+            prof = profile_series(y.loc[:add_months(sp.val_start, -1)])   # FR-S2: сургалтаас л
             profiles[sid] = prof
             if rule.get("classes") and prof["class"] not in rule["classes"]:
                 reason = f"ангилал {prof['class']} дүрэмд ороогүй"
@@ -284,7 +320,11 @@ def handle_validate(conn, job: dict, url: str) -> str:
     for sid in eligible:
         items.append((sid, sid in chosen, None if sid in chosen else f"дэд багцад сонгогдоогүй (seed {seed})"))
     if not chosen:
-        raise JobError("Дүрэмд тохирох цуваа алга — протоколын sample дүрмийг шалгана уу")
+        need = proto["train_min_months"] + proto["val_months"] + proto["test_months"]
+        raise JobError(f"Туршилтад орох цуваа алга: цуваа бүр дор хаяж {need} бүтэн сарын түүхтэй байх ёстой "
+                       f"(сургалт {proto['train_min_months']} + validation {proto['val_months']} + тест "
+                       f"{proto['test_months']} сар), энэ өгөгдлийн хамгийн урт цуваа {longest} бүтэн сар. "
+                       f"Илүү урт хугацааны өгөгдөл оруулна уу, эсвэл сургалт/validation/тестийн хугацааг богиносгоно уу.")
 
     conn.execute("DELETE FROM experiment.series_sample_item WHERE sample_id IN "
                  "(SELECT id FROM experiment.series_sample WHERE experiment_id=%s)", (exp["id"],))
@@ -295,16 +335,16 @@ def handle_validate(conn, job: dict, url: str) -> str:
               [(sample_id, s, inc, r) for s, inc, r in items])
     conn.execute("DELETE FROM curated.series_profile WHERE experiment_id=%s", (exp["id"],))
     copy_rows(conn, "curated.series_profile",
-              ["experiment_id", "series_id", "train_n_days", "n_pos", "adi", "cv2", "zero_share", "acf7",
+              ["experiment_id", "series_id", "train_n_months", "n_pos", "adi", "cv2", "zero_share", "acf12",
                "seasonal_strength", "class"],
-              [(exp["id"], s, *[profiles[s][k] for k in ("train_n_days", "n_pos", "adi", "cv2", "zero_share",
-                                                         "acf7", "seasonal_strength", "class")])
+              [(exp["id"], s, *[profiles[s][k] for k in ("train_n_months", "n_pos", "adi", "cv2", "zero_share",
+                                                         "acf12", "seasonal_strength", "class")])
                for s in sorted(profiles)])
 
     # 2. Оролтын checksum: хувилбарын sha256 + дэд багц + зорилтын утга
     h = hashlib.sha256(exp["version_sha"].encode())
     for sid in sorted(chosen):
-        y = grid.target_series(daily[sid], exp["target"])
+        y = monthly[sid]
         h.update(f"{sid}:".encode() + np.nan_to_num(y.values, nan=-1.0).tobytes())
     checksum = h.hexdigest()
 
@@ -366,13 +406,15 @@ def handle_forecast_batch(conn, job: dict, url: str) -> None:
     run = conn.execute("SELECT * FROM experiment.run WHERE run_id = %s", (p["run_id"],)).fetchone()
     split = p["split"]
     H, m = int(proto["H"]), int(proto["mase_m"])
-    sp = make_splits(pd.Timestamp(exp["date_max"]), proto["val_days"], proto["test_days"], proto["train_min_days"])
+    last = last_complete_month(exp["date_max"])
+    sp = make_splits(last, proto["val_months"], proto["test_months"], proto["train_min_months"])
+    step = int(proto.get("step_months", 1))
     if split == "validation":
-        origins = origins_for(sp.val_start, sp.val_end, proto["step_days"], H)
+        origins, section_end = origins_for(sp.val_start, sp.val_end, step), sp.val_end
     elif split == "test":
-        origins = origins_for(sp.test_start, sp.test_end, proto["step_days"], H)
+        origins, section_end = origins_for(sp.test_start, sp.test_end, step), sp.test_end
     else:
-        origins = [pd.Timestamp(exp["date_max"])]
+        origins, section_end = [last], None
     daily = load_daily(conn, exp["dataset_version_id"], p["series_ids"])
     fb = proto["fallback"]
 
@@ -380,7 +422,7 @@ def handle_forecast_batch(conn, job: dict, url: str) -> None:
     for i, sid in enumerate(p["series_ids"]):
         if i % 5 == 0:
             check_cancel(url, job["id"])
-        y = grid.target_series(daily[sid], exp["target"])
+        y = monthly_target(daily[sid], exp["target"], exp["date_max"])
         seed = derive_seed(int(proto["seed"]), sid)
         for o in origins:
             ctx = FitContext(series_id=sid, origin=o, target=exp["target"], horizon=H, seed=seed)
@@ -394,9 +436,12 @@ def handle_forecast_batch(conn, job: dict, url: str) -> None:
             if split == "live":
                 continue
             train = y.loc[:o].values
-            actual = y.reindex(fc["target_date"]).values
+            actual = y.reindex(fc["target_date"]).values.astype(float)
+            actual[(fc["target_date"] > section_end).values] = np.nan   # хэсгээс гадуурх сарыг ашиглахгүй
             for hz in proto["horizons"]:
                 k = int(hz)
+                if add_months(o, k) > section_end:
+                    continue                    # k сар бүтэн ажиглагдаагүй эхлэл энэ хүрээнд орохгүй
                 for mt in metrics_for(actual[:k], fc["y_hat"].values[:k], train, m,
                                       fc["q_lo"].values[:k], fc["q_hi"].values[:k]):
                     metric_rows.append({"run_id": run["run_id"], "series_id": sid, "split": split,
@@ -416,6 +461,8 @@ def handle_forecast_batch(conn, job: dict, url: str) -> None:
         conn.execute("DELETE FROM forecast.error_metric WHERE run_id=%s AND split=%s AND series_id = ANY(%s)",
                      (run["run_id"], split, sids))
         mdf = pd.DataFrame(metric_rows)
+        if mdf.empty:
+            return
         agg = aggregate_over_origins(mdf)
         all_rows = pd.concat([mdf, agg], ignore_index=True)
         copy_rows(conn, "forecast.error_metric",

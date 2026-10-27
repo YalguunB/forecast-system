@@ -14,7 +14,7 @@ from .. import __version__
 from ..config import get_settings
 from ..db import audit, connect
 from .core import ApiError, current_user, get_conn, hash_password, make_token, verify_password
-from .routers import datasets, experiments, forecasts, governance
+from .routers import datasets, experiments, forecasts, governance, reports
 
 log = logging.getLogger("fcsys.api")
 
@@ -62,7 +62,7 @@ def login(form: OAuth2PasswordRequestForm = Depends(), conn=Depends(get_conn)):
     audit(conn, user["id"], "login", "app_user", user["id"], {})
     return {"access_token": make_token(user), "token_type": "bearer",
             "user": {"id": user["id"], "username": user["username"], "full_name": user["full_name"],
-                     "roles": user["roles"]}}
+                     "roles": user["roles"], "branches": user["branches"]}}
 
 
 @app.get("/api/v1/auth/me", tags=["auth"])
@@ -76,7 +76,7 @@ def health(conn=Depends(get_conn)):
     return {"status": "ok", "version": __version__}
 
 
-for r in (datasets.router, experiments.router, forecasts.router, governance.router):
+for r in (datasets.router, experiments.router, forecasts.router, governance.router, reports.router):
     app.include_router(r, prefix="/api/v1")
 
 

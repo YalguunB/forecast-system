@@ -41,7 +41,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="data/synthetic")
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--start", default="2024-03-01")
+    ap.add_argument("--start", default="2022-09-01")   # 49 бүтэн сар (сургалт 24 + 12 + 12)
     ap.add_argument("--end", default="2026-09-30")
     ap.add_argument("--products", type=int, default=30)
     ap.add_argument("--branches", type=int, default=3)

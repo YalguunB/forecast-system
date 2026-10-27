@@ -11,9 +11,11 @@ from pydantic import BaseModel, Field
 from ...db import audit, jsonb
 from ...engine.grid import TARGET_LABELS
 from ...engine.models import MODEL_REGISTRY, PLANNED_MODELS
-from ...engine.protocol import DEFAULT_PROTOCOL, ProtocolError, canonical_hash, normalize_protocol
+from ...engine.monthly import add_months, last_complete_month, months_between
+from ...engine.protocol import (DEFAULT_PROTOCOL, ProtocolError, canonical_hash, is_monthly, normalize_protocol,
+                                suggest_protocol)
 from ...engine.report import experiment_report, report_xlsx
-from ..core import ApiError, audit_rejected, get_conn, not_found, require
+from ..core import ApiError, audit_rejected, branch_scope, get_conn, not_found, require, require_monthly
 
 router = APIRouter(tags=["experiments"])
 
@@ -36,6 +38,7 @@ def _exp(conn, eid: int, lock: bool = False) -> dict:
     if not e:
         raise not_found("Туршилт", eid)
     e["target_label"] = TARGET_LABELS[e["target"]]
+    e["legacy"] = not is_monthly(e["protocol"])
     return e
 
 
@@ -47,15 +50,32 @@ def _protocol(p: dict) -> dict:
 
 
 @router.get("/experiments/defaults")
-def defaults(user=Depends(require("experiment"))):
-    return {"protocol": DEFAULT_PROTOCOL, "models": sorted(MODEL_REGISTRY), "planned_models": PLANNED_MODELS,
-            "selection_levels": ["series", "group", "global"], "targets": TARGET_LABELS}
+def defaults(dataset_version_id: int | None = None, conn=Depends(get_conn), user=Depends(require("experiment"))):
+    """Анхдагч протокол. Хувилбар өгвөл өгөгдлийн бүтэн сарын тоонд тохируулсан хуваалт санал болгоно."""
+    proto, info = DEFAULT_PROTOCOL, None
+    if dataset_version_id:
+        v = conn.execute("SELECT date_min, date_max FROM raw.dataset_version WHERE id=%s", (dataset_version_id,)).fetchone()
+        if v and v["date_min"] and v["date_max"]:
+            dmin = v["date_min"]
+            first = dmin if dmin.day == 1 else add_months(dmin, 1).date()
+            n = months_between(first, last_complete_month(v["date_max"])) + 1
+            proto = suggest_protocol(n)
+            info = {"full_months": n, "first_full_month": str(first), "last_full_month": str(last_complete_month(v["date_max"]).date()),
+                    "year_horizon_testable": proto["test_months"] >= 12}
+    cats = []
+    if dataset_version_id:
+        cats = [r["c"] for r in conn.execute(
+            "SELECT DISTINCT coalesce(nullif(s.product_category, ''), 'Ангилалгүй') AS c FROM curated.series s "
+            "JOIN raw.dataset_version v ON v.dataset_id=s.dataset_id WHERE v.id=%s ORDER BY 1", (dataset_version_id,)).fetchall()]
+    return {"protocol": proto, "data": info, "categories": cats, "models": sorted(MODEL_REGISTRY),
+            "planned_models": PLANNED_MODELS, "selection_levels": ["series", "group", "global"], "targets": TARGET_LABELS}
 
 
 @router.get("/experiments")
 def list_experiments(conn=Depends(get_conn), user=Depends(require("forecast_view"))):
     rows = conn.execute(
         "SELECT e.id, e.name, e.target, e.status, e.dataset_version_id, e.created_at, e.locked_at, e.archived_at, "
+        "coalesce(e.protocol->>'grain', '') <> 'month' AS legacy, "
         "u.username AS created_by, d.name AS dataset, v.version_no FROM experiment.experiment e "
         "JOIN governance.app_user u ON u.id=e.created_by JOIN raw.dataset_version v ON v.id=e.dataset_version_id "
         "JOIN raw.dataset d ON d.id=v.dataset_id ORDER BY e.id DESC").fetchall()
@@ -75,6 +95,8 @@ def create_experiment(body: ExperimentIn, conn=Depends(get_conn), user=Depends(r
                        "Зөвхөн «шалгагдсан», архивлаагүй хувилбараар туршилт үүсгэнэ (UC-04 өмнөх нөхцөл)",
                        {"status": v["status"]})
     proto = _protocol(body.protocol)
+    if branch_scope(user) is not None:           # менежер: зөвхөн өөрийн салбарын цуваа
+        proto["sample"]["branches"] = branch_scope(user)
     if body.target == "demand" and not conn.execute(
             "SELECT 1 FROM curated.inventory_snapshot WHERE dataset_version_id=%s AND reliability='reliable' LIMIT 1",
             (body.dataset_version_id,)).fetchone():
@@ -115,6 +137,7 @@ def update_protocol(eid: int, body: ProtocolIn, conn=Depends(get_conn), user=Dep
 def start_validation(eid: int, conn=Depends(get_conn), user=Depends(require("experiment"))):
     """UC-04 алхам 4: протоколыг түгжиж (protocol_hash) validation ажлыг эхлүүлнэ."""
     e = _exp(conn, eid, lock=True)
+    require_monthly(e)
     active = conn.execute("SELECT id, status FROM governance.job WHERE type='validate' AND parent_id IS NULL "
                           "AND (payload->>'experiment_id')::bigint=%s ORDER BY id DESC LIMIT 1", (eid,)).fetchone()
     if e["status"] == "draft":
@@ -137,11 +160,11 @@ def start_validation(eid: int, conn=Depends(get_conn), user=Depends(require("exp
 def get_selection(eid: int, conn=Depends(get_conn), user=Depends(require("experiment"))):
     e = _exp(conn, eid)
     rows = conn.execute(
-        "SELECT ms.series_id, s.product_id, s.branch_id, ms.horizon, ms.run_id, r.model, r.params, ms.rule, "
+        "SELECT ms.series_id, s.product_id, s.product_name, s.product_category, s.branch_id, ms.horizon, ms.run_id, r.model, r.params, ms.rule, "
         "ms.selection_level, ms.score, p.class FROM experiment.model_selection ms "
         "JOIN experiment.run r ON r.run_id=ms.run_id JOIN curated.series s ON s.id=ms.series_id "
         "LEFT JOIN curated.series_profile p ON p.experiment_id=ms.experiment_id AND p.series_id=ms.series_id "
-        "WHERE ms.experiment_id=%s ORDER BY ms.horizon, s.product_id, s.branch_id", (eid,)).fetchall()
+        "WHERE ms.experiment_id=%s ORDER BY ms.horizon, coalesce(s.product_name, s.product_id), s.branch_id", (eid,)).fetchall()
     summary: dict = {}
     for r in rows:
         summary.setdefault(r["horizon"], {}).setdefault(r["model"], 0)
@@ -153,6 +176,7 @@ def get_selection(eid: int, conn=Depends(get_conn), user=Depends(require("experi
 def lock_selection(eid: int, conn=Depends(get_conn), user=Depends(require("experiment"))):
     """UC-04 алхам 6: сонголтыг түгжинэ (selection_hash). Үүнээс хойш model_selection өөрчлөгдөхгүй."""
     e = _exp(conn, eid, lock=True)
+    require_monthly(e)
     if e["status"] != "validation_done":
         audit_rejected(user["id"], "lock_rejected", "experiment", eid, {"status": e["status"]})
         raise ApiError(409, "invalid_state", f"Сонголтыг зөвхөн validation дууссаны дараа түгжинэ (төлөв: {e['status']})")
@@ -169,6 +193,7 @@ def lock_selection(eid: int, conn=Depends(get_conn), user=Depends(require("exper
 def run_test(eid: int, conn=Depends(get_conn), user=Depends(require("experiment"))):
     """§4.8 дүрэм 7: тест зөвхөн locked үед нэг удаа; давтан дуудахад 409."""
     e = _exp(conn, eid, lock=True)
+    require_monthly(e)
     if e["status"] != "locked" or e["test_job_id"] is not None:
         audit_rejected(user["id"], "test_rejected", "experiment", eid,
                        {"status": e["status"], "test_job_id": e["test_job_id"]})
@@ -196,6 +221,7 @@ def list_runs(eid: int, conn=Depends(get_conn), user=Depends(require("experiment
 @router.get("/experiments/{eid}/report")
 def get_report(eid: int, format: str = "json", conn=Depends(get_conn), user=Depends(require("forecast_view"))):
     e = _exp(conn, eid)
+    require_monthly(e)
     rep = experiment_report(conn, eid)
     if format == "xlsx":
         data = report_xlsx(rep)

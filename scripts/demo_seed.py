@@ -2,7 +2,7 @@
 
   python scripts/demo_seed.py --api http://localhost:8080/api/v1 --admin-password <ADMIN_PASSWORD> --data data/synthetic
 
-Үүсгэх хэрэглэгч (нууц үг = <нэр>-demo-pass): steward, analyst, manager, researcher.
+Үүсгэх хэрэглэгч (нууц үг = <нэр>-demo-pass): manager (менежер), executive (удирдлага).
 Синтетик өгөгдлийг импортолж, блоклох асуудлыг хасаад, туршилтыг validation → түгжих → тест хүртэл ажиллуулна.
 """
 from __future__ import annotations
@@ -17,7 +17,7 @@ import httpx
 
 MAPPING = {"txn_date": "sale_date", "product_id": "item", "branch_id": "store", "qty": "quantity", "unit": "uom",
            "txn_id": "receipt_no", "amount": "revenue", "is_return": "is_return"}
-USERS = {"steward": ["data_steward"], "analyst": ["analyst"], "manager": ["manager"], "researcher": ["researcher"]}
+USERS = {"manager": ["manager"], "executive": ["executive"]}
 
 
 def main() -> None:
@@ -51,9 +51,9 @@ def main() -> None:
     tok = {}
     for name, roles in USERS.items():
         c.post("/users", headers=admin, json={"username": name, "password": f"{name}-demo-pass", "roles": roles,
-                                              "full_name": name.capitalize()})
+                                              "branches": ["*"], "full_name": name.capitalize()})
         tok[name] = login(name, f"{name}-demo-pass")
-    st, rs = tok["steward"], tok["researcher"]
+    st = rs = tok["manager"]
 
     print("1. Импорт")
     ds = c.post("/datasets", headers=st, json={"name": f"Синтетик дэлгүүр {int(time.time())}", "source": "synthetic"}).json()
@@ -74,12 +74,14 @@ def main() -> None:
     wait(c.post(f"/dataset-versions/{vid}/apply", headers=st).json()["job_id"], st)
 
     print("3. Туршилт: validation → түгжих → тест")
-    e = c.post("/experiments", headers=rs, json={"name": "Үндсэн туршилт (S)", "dataset_version_id": vid, "target": "sales",
-                                                 "protocol": {"sample": {"max_series": a.max_series}}}).json()
+    proto = c.get(f"/experiments/defaults?dataset_version_id={vid}", headers=rs).json()["protocol"]   # сарын тоонд тохирсон
+    proto["sample"]["max_series"] = a.max_series
+    e = c.post("/experiments", headers=rs, json={"name": "Сарын таамаглал (S)", "dataset_version_id": vid, "target": "sales",
+                                                 "protocol": proto}).json()
     wait(c.post(f"/experiments/{e['id']}/validate", headers=rs).json()["job_id"], rs)
     c.post(f"/experiments/{e['id']}/lock", headers=rs).raise_for_status()
     wait(c.post(f"/experiments/{e['id']}/test", headers=rs).json()["job_id"], rs)
-    print(f"Бэлэн: туршилт #{e['id']}. Нэвтрэх: analyst / analyst-demo-pass")
+    print(f"Бэлэн: туршилт #{e['id']}. Нэвтрэх: manager / manager-demo-pass, executive / executive-demo-pass")
 
 
 if __name__ == "__main__":

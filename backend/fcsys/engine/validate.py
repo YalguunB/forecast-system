@@ -49,6 +49,15 @@ def _row_issues(res: ValidationResult, rule: str, sev: str, rows: pd.DataFrame, 
                                 f"(эхний {MAX_ROW_ISSUES_PER_RULE}-г жагсаав)"))
 
 
+def numeric_share(values: pd.Series) -> float:
+    """Утгын хэдэн хувь нь тоо вэ (нэгжийн баганад үнэ зураглагдсан эсэхийг илрүүлэх)."""
+    v = values.astype(str).str.strip()
+    v = v[v != ""]
+    if v.empty:
+        return 0.0
+    return float(pd.to_numeric(v.str.replace(",", "", regex=False), errors="coerce").notna().mean())
+
+
 def validate_transactions(tx: pd.DataFrame, today: dt.date, unit_conversions: list[dict] | None = None,
                           prices: pd.DataFrame | None = None) -> ValidationResult:
     res = ValidationResult()
@@ -95,10 +104,12 @@ def validate_transactions(tx: pd.DataFrame, today: dt.date, unit_conversions: li
             base = pd.Series(ok.loc[ok.product_ext_id == pid, "unit"]).mode().iloc[0]
             unconverted = [u for u in us if u != base and (pid, u) not in conv and ("*", u) not in conv]
             if unconverted:
+                shown = ", ".join(sorted(map(str, us))[:5]) + (f" … (нийт {len(us)})" if len(us) > 5 else "")
+                hint = (" — нэгжийн баганад тоо байна; буруу багана (жишээ нь үнэ) зураглагдсан байж магадгүй"
+                        if numeric_share(pd.Series(us)) > 0.8 else "")
                 res.issues.append(Issue("DQ-04", "blocking",
-                                        f"{pid}: олон нэгж {sorted(us)}; «{base}» руу хөрвүүлэлт "
-                                        f"тодорхойлоогүй: {sorted(unconverted)}",
-                                        product_id=pid, original_value=",".join(sorted(us))))
+                                        f"{pid}: олон нэгж [{shown}]; «{base}» руу хөрвүүлэлт тодорхойлоогүй{hint}",
+                                        product_id=pid, original_value=shown[:200]))
 
     # DQ-05 — сөрөг хэмжээ, буцаалт → тусад нь хадгалж цэвэр борлуулалт тооцно
     ret = ok[ok["is_return"]]

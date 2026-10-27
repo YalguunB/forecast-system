@@ -34,9 +34,9 @@ def history_until(y: pd.Series, origin: pd.Timestamp) -> pd.Series:
     return y.loc[:origin]
 
 
-def fill_for_model(y: pd.Series) -> pd.Series:
-    """Зорилтоос хасагдсан (NaN: хаалттай, бүртгэл дутуу) өдрийг загварын оролтод нөхнө.
-    Зөвхөн өмнөх утгыг ашиглана: долоо хоногийн ижил өдрийн сүүлийн 4 ажиглалтын дундаж,
+def fill_for_model(y: pd.Series, period: int = 7) -> pd.Series:
+    """Зорилтоос хасагдсан (NaN) цэгийг загварын оролтод нөхнө. Зөвхөн өмнөх утгыг ашиглана:
+    улирлын ижил байрлалын (өдрийн цувааны 7, сарын цувааны 12) сүүлийн 4 ажиглалтын дундаж,
     байхгүй бол сүүлийн ажиглалт. Нөхсөн утга үнэлгээнд хэзээ ч орохгүй."""
     y = y.copy()
     first = y.first_valid_index()
@@ -45,7 +45,7 @@ def fill_for_model(y: pd.Series) -> pd.Series:
     y = y.loc[first:]
     vals = y.values.astype(float)
     for i in np.where(np.isnan(vals))[0]:
-        same_dow = [vals[j] for j in range(i - 7, max(-1, i - 7 * 5), -7) if j >= 0 and not np.isnan(vals[j])]
+        same_dow = [vals[j] for j in range(i - period, max(-1, i - period * 5), -period) if j >= 0 and not np.isnan(vals[j])]
         if same_dow:
             vals[i] = float(np.mean(same_dow[:4]))
         else:

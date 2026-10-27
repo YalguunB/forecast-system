@@ -10,10 +10,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ...db import audit, jsonb
-from ...engine.grid import TARGET_LABELS, target_series
+from ...engine.grid import TARGET_LABELS
+from ...engine.monthly import monthly_target
 from ...engine.jobs import maybe_finalize
 from ...engine.store import load_daily
-from ..core import ROLES, ApiError, current_user, get_conn, hash_password, not_found, require
+from ..core import ROLES, ApiError, require_monthly, assert_branch, current_user, get_conn, hash_password, not_found, require, scope_sql
 
 router = APIRouter()
 
@@ -30,6 +31,10 @@ class AdjustmentIn(BaseModel):
 @router.post("/adjustments", status_code=201, tags=["governance"])
 def create_adjustment(body: AdjustmentIn, conn=Depends(get_conn), user=Depends(require("adjust"))):
     """original_value-г сервер өөрөө forecast_value-аас бичнэ; forecast_value өөрчлөгдөхгүй."""
+    s = conn.execute("SELECT branch_id FROM curated.series WHERE id=%s", (body.series_id,)).fetchone()
+    if not s:
+        raise not_found("Цуваа", body.series_id)
+    assert_branch(user, s["branch_id"])
     fv = conn.execute(
         "SELECT y_hat FROM forecast.forecast_value WHERE run_id=%s AND series_id=%s AND split='live' AND target_date=%s "
         "ORDER BY origin_date DESC LIMIT 1", (body.run_id, body.series_id, body.target_date)).fetchone()
@@ -62,6 +67,7 @@ def value_added(experiment_id: int, conn=Depends(get_conn), user=Depends(require
                      "ON v.id=e.dataset_version_id WHERE e.id=%s", (experiment_id,)).fetchone()
     if not e:
         raise not_found("Туршилт", experiment_id)
+    require_monthly(e)
     adj = conn.execute(
         "SELECT DISTINCT ON (a.run_id, a.series_id, a.target_date) a.* FROM governance.forecast_adjustment a "
         "JOIN experiment.run r ON r.run_id=a.run_id WHERE r.experiment_id=%s "
@@ -74,19 +80,20 @@ def value_added(experiment_id: int, conn=Depends(get_conn), user=Depends(require
     if not later:
         return {**base, "message": "Бодит утга агуулсан хожмын хувилбар алга — FVA-г бодит борлуулалт ирсний дараа хэмжинэ"}
     sids = sorted({a["series_id"] for a in adj})
+    later_max = conn.execute("SELECT date_max FROM raw.dataset_version WHERE id=%s", (later["id"],)).fetchone()["date_max"]
     daily = load_daily(conn, later["id"], sids)
     pairs = []
     for a in adj:
         d = daily.get(a["series_id"])
         if d is None:
             continue
-        y = target_series(d, e["target"])
+        y = monthly_target(d, e["target"], later_max)      # бодит сарын утга (бүтэн сар л)
         yv = y.get(pd.Timestamp(a["target_date"]))
         if yv is None or pd.isna(yv):
             continue
         pairs.append((abs(a["original_value"] - yv), abs(a["adjusted_value"] - yv)))
     if not pairs:
-        return {**base, "message": "Залруулсан огноонд ажиглагдсан бодит утга алга"}
+        return {**base, "message": "Залруулсан сард ажиглагдсан (бүтэн) бодит утга алга"}
     l_model = sum(p[0] for p in pairs) / len(pairs)
     l_adj = sum(p[1] for p in pairs) / len(pairs)
     return {"n_adjustments": len(adj), "n_pairs": len(pairs), "mae_model": l_model, "mae_adjusted": l_adj,
@@ -102,20 +109,36 @@ def export_forecasts(experiment_id: int, split: str = "live", format: str = Quer
                      "WHERE e.id=%s", (experiment_id,)).fetchone()
     if not e:
         raise not_found("Туршилт", experiment_id)
+    require_monthly(e)
     rows = conn.execute(
-        "SELECT s.product_id, s.branch_id, s.unit, ms.horizon AS selected_for_horizon, r.run_id, r.model, fv.origin_date, "
-        "fv.h, fv.target_date, fv.y_hat, fv.q_lo, fv.q_hi, "
+        "SELECT s.product_id, s.product_name, s.product_category, s.branch_id, s.unit, r.run_id, r.model, "
+        "fv.origin_date AS last_known_month, fv.h AS month_ahead, fv.target_date AS target_month, fv.y_hat, fv.q_lo, fv.q_hi, "
         "(SELECT a.adjusted_value FROM governance.forecast_adjustment a WHERE a.run_id=fv.run_id AND "
         " a.series_id=fv.series_id AND a.target_date=fv.target_date ORDER BY a.created_at DESC LIMIT 1) AS adjusted_value "
         "FROM forecast.forecast_value fv JOIN experiment.run r ON r.run_id=fv.run_id "
         "JOIN curated.series s ON s.id=fv.series_id "
         "JOIN experiment.model_selection ms ON ms.experiment_id=r.experiment_id AND ms.series_id=fv.series_id "
         "JOIN experiment.run vr ON vr.run_id=ms.run_id AND vr.model=r.model AND vr.params=r.params "
-        "WHERE r.experiment_id=%s AND fv.split=%s AND fv.h <= ms.horizon AND ms.horizon=30 "
-        "ORDER BY s.product_id, s.branch_id, fv.origin_date, fv.h", (experiment_id, split)).fetchall()
+        "WHERE r.experiment_id=%s AND fv.split=%s AND ms.horizon=12 " + scope_sql(user)[0] +
+        " ORDER BY coalesce(s.product_name, s.product_id), s.branch_id, fv.origin_date, fv.h",
+        [experiment_id, split, *scope_sql(user)[1]]).fetchall()
     df = pd.DataFrame(rows)
     label = TARGET_LABELS[e["target"]]
+    periods = pd.DataFrame()
     if not df.empty:
+        # Хугацааны нийлбэр (тэгшитгэл 2.2): сар = 1, улирал = 3, жил = 12 сарын цэгэн таамаглалын нийлбэр.
+        # Интервалын хязгаарыг нэмж хугацааны интервал гэж үзэхгүй.
+        df["final_value"] = df["adjusted_value"].fillna(df["y_hat"])
+        key = ["product_id", "product_name", "product_category", "branch_id", "unit", "last_known_month"]
+        recs = []
+        for k, g in df.groupby(key, dropna=False, sort=False):
+            g = g.sort_values("month_ahead")
+            r = dict(zip(key, k))
+            for n, lbl in ((1, "Сар"), (3, "Улирал"), (12, "Жил")):
+                r[f"{lbl} (таамаглал)"] = float(g["y_hat"].iloc[:n].sum()) if len(g) >= n else None
+                r[f"{lbl} (залруулсан)"] = float(g["final_value"].iloc[:n].sum()) if len(g) >= n else None
+            recs.append(r)
+        periods = pd.DataFrame(recs)
         df.insert(0, "target_label", label)           # FR-F2: зорилтын нэр мөр бүрд
         df.insert(1, "target", e["target"])
         df["experiment_id"] = e["id"]
@@ -138,7 +161,8 @@ def export_forecasts(experiment_id: int, split: str = "live", format: str = Quer
                         columns=["Талбар", "Утга"])
     with pd.ExcelWriter(out, engine="openpyxl") as xw:
         meta.to_excel(xw, sheet_name="Мэдээлэл", index=False)
-        df.to_excel(xw, sheet_name=label[:31], index=False)
+        df.to_excel(xw, sheet_name="Сар бүрээр", index=False)
+        periods.to_excel(xw, sheet_name="Сар, улирал, жилийн нийлбэр", index=False)
     return StreamingResponse(io.BytesIO(out.getvalue()),
                              media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={"Content-Disposition": f'attachment; filename="{fname}.xlsx"'})
@@ -193,12 +217,14 @@ class UserIn(BaseModel):
     full_name: str = ""
     password: str = Field(min_length=8)
     roles: list[str]
+    branches: list[str] = Field(default_factory=lambda: ["*"], description="Менежерийн салбар; '*' = бүгд")
 
 
 class UserPatch(BaseModel):
     full_name: str | None = None
     password: str | None = Field(None, min_length=8)
     roles: list[str] | None = None
+    branches: list[str] | None = None
     is_active: bool | None = None
 
 
@@ -210,8 +236,15 @@ def _check_roles(roles: list[str]) -> None:
 
 @router.get("/users", tags=["admin"])
 def list_users(conn=Depends(get_conn), user=Depends(require("admin"))):
-    return conn.execute("SELECT id, username, full_name, roles, is_active, created_at FROM governance.app_user "
+    return conn.execute("SELECT id, username, full_name, roles, branches, is_active, created_at FROM governance.app_user "
                         "ORDER BY id").fetchall()
+
+
+@router.get("/branches", tags=["admin"])
+def list_branches(conn=Depends(get_conn), user=Depends(require("series_view"))):
+    """Өгөгдөлд байгаа салбарын код (админ менежерт оноох, удирдлага шүүх)."""
+    return [r["branch_id"] for r in conn.execute(
+        "SELECT DISTINCT branch_id FROM curated.series ORDER BY 1").fetchall()]
 
 
 @router.post("/users", status_code=201, tags=["admin"])
@@ -219,10 +252,12 @@ def create_user(body: UserIn, conn=Depends(get_conn), user=Depends(require("admi
     _check_roles(body.roles)
     if conn.execute("SELECT 1 FROM governance.app_user WHERE username=%s", (body.username,)).fetchone():
         raise ApiError(409, "duplicate_username", "Ийм нэвтрэх нэр бүртгэлтэй")
-    row = conn.execute("INSERT INTO governance.app_user (username, full_name, password_hash, roles) VALUES (%s,%s,%s,%s) "
-                       "RETURNING id, username, full_name, roles, is_active",
-                       (body.username, body.full_name, hash_password(body.password), body.roles)).fetchone()
-    audit(conn, user["id"], "create", "app_user", row["id"], {"roles": body.roles})
+    if "manager" in body.roles and not body.branches:
+        raise ApiError(422, "branches_required", "Менежерт дор хаяж нэг салбар оноох шаардлагатай (эсвэл «Бүх салбар»)")
+    row = conn.execute("INSERT INTO governance.app_user (username, full_name, password_hash, roles, branches) "
+                       "VALUES (%s,%s,%s,%s,%s) RETURNING id, username, full_name, roles, branches, is_active",
+                       (body.username, body.full_name, hash_password(body.password), body.roles, body.branches)).fetchone()
+    audit(conn, user["id"], "create", "app_user", row["id"], {"roles": body.roles, "branches": body.branches})
     return row
 
 
@@ -232,9 +267,10 @@ def update_user(uid: int, body: UserPatch, conn=Depends(get_conn), user=Depends(
         _check_roles(body.roles)
     row = conn.execute(
         "UPDATE governance.app_user SET full_name=coalesce(%s, full_name), roles=coalesce(%s, roles), "
-        "is_active=coalesce(%s, is_active), password_hash=coalesce(%s, password_hash) WHERE id=%s "
-        "RETURNING id, username, full_name, roles, is_active",
-        (body.full_name, body.roles, body.is_active, hash_password(body.password) if body.password else None, uid)
+        "branches=coalesce(%s, branches), is_active=coalesce(%s, is_active), password_hash=coalesce(%s, password_hash) "
+        "WHERE id=%s RETURNING id, username, full_name, roles, branches, is_active",
+        (body.full_name, body.roles, body.branches, body.is_active,
+         hash_password(body.password) if body.password else None, uid)
     ).fetchone()
     if not row:
         raise not_found("Хэрэглэгч", uid)

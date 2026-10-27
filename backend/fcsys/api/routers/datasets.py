@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from ...config import get_settings
 from ...db import audit, jsonb
 from ...engine import ingest
-from ..core import ApiError, get_conn, not_found, require
+from ..core import ApiError, assert_branch, branch_scope, get_conn, not_found, require, scope_sql
 
 router = APIRouter(tags=["datasets"])
 
@@ -55,13 +55,15 @@ def preview(dataset_id: int, file: UploadFile = File(...), conn=Depends(get_conn
     """UC-01 алхам 2: эхний мөрүүдийг уншиж талбарын зураглалыг санал болгоно."""
     tmp = _save_upload(file, Path(get_settings().file_store) / "tmp")
     try:
-        df = ingest.read_table(tmp, nrows=20)
+        df = ingest.read_table(tmp, nrows=2000)   # огнооны хэлбэрийг таних түүвэр
     except Exception as exc:  # noqa: BLE001
         raise ApiError(422, "unreadable_file", "Файлыг уншиж чадсангүй (CSV эсвэл Excel байх ёстой)",
                        {"error": str(exc)[:300]})
     finally:
         tmp.unlink(missing_ok=True)
-    return {"columns": list(df.columns), "suggested_mapping": ingest.suggest_mapping(list(df.columns)),
+    sm = ingest.suggest_mapping(list(df.columns))
+    return {"columns": list(df.columns), "suggested_mapping": sm,
+            "suggested_date_format": ingest.suggest_date_format(df[sm["txn_date"]]) if sm.get("txn_date") else None,
             "required": ingest.REQUIRED_FIELDS, "optional": ingest.OPTIONAL_FIELDS,
             "rows": df.head(10).to_dict(orient="records")}
 
@@ -72,6 +74,8 @@ def create_version(
     file: UploadFile = File(...),
     mapping: str = Form(..., description='JSON: {"txn_date": "<багана>", ...}'),
     date_format: str | None = Form(None),
+    default_branch: str | None = Form(None, description="branch_id зураглаагүй үед бүх мөрийн салбар (анхдагч ALL)"),
+    default_unit: str | None = Form(None, description="unit зураглаагүй үед бүх мөрийн нэгж (анхдагч ширхэг)"),
     unit_conversions: str | None = Form(None, description='JSON: [{"product_id","from","to","factor"}]'),
     subset_rule: str | None = Form(None, description="Нээлттэй өгөгдлийн дэд багцын дүрэм, seed (FR-D9)"),
     force: bool = Form(False),
@@ -103,6 +107,31 @@ def create_version(
         path.unlink(missing_ok=True)
         raise ApiError(422, "missing_required_fields", "Заавал талбар дутуу: " + ", ".join(missing),
                        {"missing": missing, "columns": cols})
+    scope = branch_scope(user)
+    if scope is not None:   # FR-08: менежер зөвхөн өөрийн салбарын өгөгдөл импортлоно
+        if fields.get("branch_id"):
+            found = set(ingest.read_table(path)[fields["branch_id"]].astype(str).str.strip()) - {""}
+            foreign = sorted(found - set(scope))
+            if foreign:
+                path.unlink(missing_ok=True)
+                raise ApiError(403, "branch_forbidden",
+                               f"Файлд таны хариуцаагүй салбарын мөр байна: {', '.join(foreign[:10])}",
+                               {"your_branches": scope, "foreign": foreign[:50]})
+        else:
+            default_branch = default_branch or scope[0]
+            if default_branch not in scope:
+                path.unlink(missing_ok=True)
+                raise ApiError(403, "branch_forbidden", f"«{default_branch}» салбар таны хариуцах салбар биш",
+                               {"your_branches": scope})
+    if fields.get("unit"):
+        from ...engine.validate import numeric_share
+        sample = ingest.read_table(path, nrows=500)[fields["unit"]]
+        if numeric_share(sample) > 0.8:
+            path.unlink(missing_ok=True)
+            raise ApiError(422, "unit_column_numeric",
+                           f"«{fields['unit']}» баганад тоон утга байна — энэ нь хэмжих нэгж биш бололтой "
+                           "(жишээ нь «ширхэг», «кг»). Нэгж талбарыг «— байхгүй —» болгоно уу.",
+                           {"column": fields["unit"], "sample": sample.head(5).tolist()})
     sha = ingest.sha256_file(path)
     dup = conn.execute("SELECT id, version_no FROM raw.dataset_version WHERE dataset_id=%s AND sha256=%s",
                        (dataset_id, sha)).fetchone()
@@ -121,7 +150,10 @@ def create_version(
         "INSERT INTO raw.dataset_version (dataset_id, version_no, file_name, stored_path, sha256, mapping, "
         "subset_rule, imported_by) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id, version_no",
         (dataset_id, no, Path(file.filename or "file").name, str(path), sha,
-         jsonb({"fields": fields, "date_format": date_format, "unit_conversions": conversions,
+         jsonb({"fields": {k: v for k, v in fields.items() if v}, "date_format": date_format,
+                "default_branch": None if fields.get("branch_id") else (default_branch or ingest.DEFAULT_BRANCH),
+                "default_unit": None if fields.get("unit") else (default_unit or ingest.DEFAULT_UNIT),
+                "unit_conversions": conversions,
                 "aux_files": sorted(aux)}), jsonb(subset) if subset else None, user["id"])).fetchone()
     job = conn.execute("INSERT INTO governance.job (type, payload, created_by) VALUES ('import', %s, %s) RETURNING id",
                        (jsonb({"version_id": ver["id"], "aux": aux}), user["id"])).fetchone()
@@ -165,17 +197,20 @@ def get_version(vid: int, conn=Depends(get_conn), user=Depends(require("series_v
 def quality_report(vid: int, conn=Depends(get_conn), user=Depends(require("quality_view"))):
     """FR-D10: дүрмээр болон бүтээгдэхүүнээр."""
     v = _version(conn, vid)
+    scope = branch_scope(user)
     by_rule = conn.execute(
-        "SELECT rule_id, severity::text, action, count(*) AS n FROM curated.data_quality_issue "
-        "WHERE dataset_version_id=%s GROUP BY 1,2,3 ORDER BY 1,2,3", (vid,)).fetchall()
+        "SELECT i.rule_id, i.severity::text, i.action, count(*) AS n FROM curated.data_quality_issue i "
+        "LEFT JOIN curated.series s ON s.id = i.series_id WHERE i.dataset_version_id=%s "
+        + ("" if scope is None else "AND (i.series_id IS NULL OR s.branch_id = ANY(%s)) ") +
+        "GROUP BY 1,2,3 ORDER BY 1,2,3", [vid] + ([] if scope is None else [scope])).fetchall()
     by_series = conn.execute("""
-        SELECT s.id AS series_id, s.product_id, s.branch_id, s.unit,
+        SELECT s.id AS series_id, s.product_id, s.product_name, s.branch_id, s.unit,
                count(*) AS n_days, min(d.day) AS first_day, max(d.day) AS last_day,
                avg((d.sales_qty = 0)::int)::float AS zero_share,
                avg((d.day_state IN ('missing','unknown'))::int)::float AS incomplete_share
           FROM curated.daily_series d JOIN curated.series s ON s.id = d.series_id
-         WHERE d.dataset_version_id = %s
-         GROUP BY s.id ORDER BY s.product_id, s.branch_id""", (vid,)).fetchall()
+         WHERE d.dataset_version_id = %s""" + scope_sql(user)[0] + """
+         GROUP BY s.id ORDER BY coalesce(s.product_name, s.product_id), s.branch_id""", [vid, *scope_sql(user)[1]]).fetchall()
     states = conn.execute("SELECT series_id, day_state::text AS st, count(*) AS n FROM curated.daily_series "
                           "WHERE dataset_version_id=%s GROUP BY 1,2", (vid,)).fetchall()
     issues = conn.execute("SELECT series_id, count(*) AS n, count(*) FILTER (WHERE action='corrected') AS corrected "
@@ -200,10 +235,13 @@ def quality_report(vid: int, conn=Depends(get_conn), user=Depends(require("quali
 def list_issues(vid: int, severity: str | None = None, rule_id: str | None = None, action: str | None = None,
                 limit: int = Query(200, le=2000), offset: int = 0,
                 conn=Depends(get_conn), user=Depends(require("import"))):
-    q = ("SELECT i.*, i.severity::text AS severity, s.product_id, s.branch_id, u.username AS resolved_by_name "
+    q = ("SELECT i.*, i.severity::text AS severity, s.product_id, s.product_name, s.branch_id, u.username AS resolved_by_name "
          "FROM curated.data_quality_issue i LEFT JOIN curated.series s ON s.id=i.series_id "
          "LEFT JOIN governance.app_user u ON u.id=i.resolved_by WHERE i.dataset_version_id=%s")
     params: list = [vid]
+    if branch_scope(user) is not None:
+        q += " AND (i.series_id IS NULL OR s.branch_id = ANY(%s))"
+        params.append(branch_scope(user))
     for col, val in (("i.severity::text", severity), ("i.rule_id", rule_id), ("i.action", action)):
         if val:
             q += f" AND {col} = %s"
@@ -256,6 +294,27 @@ def decide_issue(issue_id: int, body: IssueDecision, conn=Depends(get_conn), use
     return row
 
 
+class BulkDecision(BaseModel):
+    rule_id: str = Field(pattern=r"^DQ-(0[1-9]|10)$")
+    action: str = Field(pattern="^(accepted|excluded)$")
+    reason: str = Field(min_length=3)
+
+
+@router.post("/dataset-versions/{vid}/issues/bulk")
+def decide_bulk(vid: int, body: BulkDecision, conn=Depends(get_conn), user=Depends(require("import"))):
+    """Нэг дүрмийн бүх нээлттэй асуудлыг нэг шалтгаанаар шийдэх. «excluded» нь зөвхөн мөртэй асуудалд."""
+    _version(conn, vid)
+    _assert_version_editable(conn, vid)
+    rows = conn.execute(
+        "UPDATE curated.data_quality_issue SET action=%s, reason=%s, resolved_by=%s, resolved_at=now() "
+        "WHERE dataset_version_id=%s AND rule_id=%s AND action='open' "
+        + ("AND source_row IS NOT NULL " if body.action == "excluded" else "") + "RETURNING id",
+        (body.action, body.reason, user["id"], vid, body.rule_id)).fetchall()
+    audit(conn, user["id"], "resolve_issues_bulk", "dataset_version", vid,
+          {"rule_id": body.rule_id, "action": body.action, "reason": body.reason, "n": len(rows)})
+    return {"updated": len(rows)}
+
+
 @router.post("/dataset-versions/{vid}/apply", status_code=202)
 def apply_decisions(vid: int, conn=Depends(get_conn), user=Depends(require("import"))):
     """UC-02: шийдвэрийг хэрэглэж өдрийн цувааг дахин байгуулна, төлвийг батлана."""
@@ -270,14 +329,19 @@ def apply_decisions(vid: int, conn=Depends(get_conn), user=Depends(require("impo
 @router.get("/dataset-versions/{vid}/series")
 def list_series(vid: int, conn=Depends(get_conn), user=Depends(require("series_view"))):
     return conn.execute(
-        "SELECT s.id, s.product_id, s.branch_id, s.unit, count(*) AS n_days, min(d.day) AS first_day, "
+        "SELECT s.id, s.product_id, s.product_name, s.branch_id, s.unit, count(*) AS n_days, min(d.day) AS first_day, "
         "max(d.day) AS last_day, sum(d.sales_qty) AS total_qty, avg((d.sales_qty=0)::int)::float AS zero_share "
         "FROM curated.daily_series d JOIN curated.series s ON s.id=d.series_id WHERE d.dataset_version_id=%s "
-        "GROUP BY s.id ORDER BY s.product_id, s.branch_id", (vid,)).fetchall()
+        + scope_sql(user)[0] + " GROUP BY s.id ORDER BY coalesce(s.product_name, s.product_id), s.branch_id",
+        [vid, *scope_sql(user)[1]]).fetchall()
 
 
 @router.get("/dataset-versions/{vid}/series/{series_id}/days")
 def series_days(vid: int, series_id: int, conn=Depends(get_conn), user=Depends(require("quality_view"))):
     """Өдрийн төлвийн календар (Чанарын шалгалтын дэлгэц)."""
+    s = conn.execute("SELECT branch_id FROM curated.series WHERE id=%s", (series_id,)).fetchone()
+    if not s:
+        raise not_found("Цуваа", series_id)
+    assert_branch(user, s["branch_id"])
     return conn.execute("SELECT day, sales_qty, returns_qty, day_state::text AS state FROM curated.daily_series "
                         "WHERE dataset_version_id=%s AND series_id=%s ORDER BY day", (vid, series_id)).fetchall()

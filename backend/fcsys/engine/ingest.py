@@ -8,18 +8,26 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-REQUIRED_FIELDS = ["txn_date", "product_id", "branch_id", "qty", "unit"]
-OPTIONAL_FIELDS = ["txn_id", "amount", "is_return"]
+REQUIRED_FIELDS = ["txn_date", "product_id", "qty"]
+# branch_id, unit заавал биш: зураглаагүй бол бүх мөрд тогтмол утга (DEFAULT_BRANCH, DEFAULT_UNIT
+# эсвэл хэрэглэгчийн өгсөн default_branch / default_unit) онооно. Нэг салбартай, нэг нэгжтэй
+# байгууллагад ч, онлайн дэлгүүрийн өгөгдөлд ч ажиллана.
+OPTIONAL_FIELDS = ["product_name", "product_category", "branch_id", "unit", "txn_id", "amount", "is_return"]
+DEFAULT_BRANCH = "ALL"
+DEFAULT_UNIT = "ширхэг"
 
 # Талбарын нэрийг таних түлхүүр үгс (англи, монгол) — зураглалын санал (UC-01 алхам 2)
 _HINTS = {
     "txn_date": ["date", "txn_date", "огноо", "day", "sale_date"],
-    "product_id": ["product", "item", "sku", "бүтээгдэхүүн", "item_id", "product_id"],
+    "product_id": ["product_id", "productid", "item_id", "sku", "product", "item", "бүтээгдэхүүн"],
+    "product_name": ["product_name", "productname", "item_name", "itemname", "бүтээгдэхүүнийнэр", "name", "нэр"],
+    "product_category": ["product_category", "category", "categoryname", "category_name", "ангилал",
+                         "бүтээгдэхүүнийангилал", "productgroup", "group", "бүлэг", "department", "subcategory"],
     "branch_id": ["branch", "store", "салбар", "shop", "store_id", "branch_id"],
     "qty": ["qty", "quantity", "units", "тоо", "хэмжээ", "sales"],
     "unit": ["unit", "uom", "нэгж"],
-    "txn_id": ["txn_id", "transaction", "receipt", "баримт", "order_id"],
-    "amount": ["amount", "revenue", "дүн", "total", "value"],
+    "txn_id": ["txn_id", "order_id", "orderid", "transaction", "receipt", "баримт"],
+    "amount": ["amount", "revenue", "totalsales", "дүн", "total", "value"],
     "is_return": ["return", "буцаалт", "is_return"],
 }
 
@@ -51,11 +59,37 @@ def read_table(path: str | Path, nrows: int | None = None) -> pd.DataFrame:
     return df.fillna("")
 
 
+# Эдгээр үгтэй багана нь нэгж, хэмжээ биш (UnitPrice, Unit Cost → «unit»-д буруу таарахаас сэргийлнэ)
+_NOT_FOR = {"unit": ("price", "cost", "үнэ"), "qty": ("price", "cost", "үнэ", "revenue", "amount"),
+            "product_id": ("category", "ангилал", "brand", "name", "нэр"), "txn_date": ("ship",),
+            "product_name": ("customer", "seller", "brand", "category", "харилцагч"),
+            "product_category": ("customer", "харилцагч")}
+
+DATE_FORMATS = ["%Y-%m-%d", "%Y/%m/%d", "%d-%m-%y", "%d-%m-%Y", "%d/%m/%Y", "%m/%d/%Y", "%d.%m.%Y",
+                "%m-%d-%y", "%m/%d/%y", "%d/%m/%y", "%Y%m%d"]
+
+
+def suggest_date_format(values: pd.Series) -> str | None:
+    """Түүврийн утгыг бүрэн уншдаг огнооны хэлбэрийг олно. Хэд хэдэн хэлбэр таарвал (жишээ нь
+    03-04-25) өдөр > 12 утгаар ялгана; ялгагдахгүй бол жагсаалтын эхнийхийг авна."""
+    v = values.astype(str).str.strip()
+    v = v[v != ""].head(2000)
+    if v.empty:
+        return None
+    best, best_rate = None, 0.0
+    for fmt in DATE_FORMATS:
+        rate = pd.to_datetime(v, format=fmt, errors="coerce").notna().mean()
+        if rate > best_rate + 1e-9:
+            best, best_rate = fmt, rate
+    return best if best_rate >= 0.95 else None
+
+
 def suggest_mapping(columns: list[str]) -> dict[str, str | None]:
-    norm = {c: re.sub(r"[^a-zа-яөү0-9_]", "", c.lower()) for c in columns}
+    norm_all = {c: re.sub(r"[^a-zа-яөү0-9_]", "", c.lower()) for c in columns}
     mapping: dict[str, str | None] = {}
     used: set[str] = set()
     for field_, hints in _HINTS.items():
+        norm = {c: n for c, n in norm_all.items() if not any(b in n for b in _NOT_FOR.get(field_, ()))}
         found = None
         for hint in hints:  # эхлээд яг таарах, дараа нь агуулах
             for c, n in norm.items():
@@ -81,10 +115,14 @@ def suggest_mapping(columns: list[str]) -> dict[str, str | None]:
 def missing_required(columns: list[str], mapping: dict) -> list[str]:
     """DQ-01 (толгойн түвшин): заавал талбар зураглагдаагүй эсвэл файлд байхгүй."""
     cols = set(columns)
-    return [f for f in REQUIRED_FIELDS if not mapping.get(f) or mapping[f] not in cols]
+    missing = [f for f in REQUIRED_FIELDS if not mapping.get(f) or mapping[f] not in cols]
+    # заавал биш талбар зураглагдсан ч файлд байхгүй бол бас алдаа
+    missing += [f for f in OPTIONAL_FIELDS if mapping.get(f) and mapping[f] not in cols]
+    return missing
 
 
 def _parse_dates(raw: pd.Series, date_format: str | None) -> pd.Series:
+    date_format = date_format or suggest_date_format(raw)   # хэлбэр өгөөгүй бол таних
     if date_format:
         parsed = pd.to_datetime(raw, format=date_format, errors="coerce")
     else:
@@ -102,16 +140,27 @@ def _to_bool(raw: pd.Series) -> pd.Series:
     return raw.astype(str).str.strip().str.lower().isin(["1", "true", "yes", "y", "тийм", "t"])
 
 
-def parse_transactions(df: pd.DataFrame, mapping: dict, date_format: str | None = None) -> pd.DataFrame:
+def parse_transactions(df: pd.DataFrame, mapping: dict, date_format: str | None = None,
+                       default_branch: str | None = None, default_unit: str | None = None) -> pd.DataFrame:
     """Зураглалын дагуу нэгдсэн хэлбэрт оруулна. Уншигдаагүй утга NaN/NaT болж үлдэнэ
     (устгахгүй), validate модуль тэдгээрийг DQ-01, DQ-02-оор тэмдэглэнэ."""
     out = pd.DataFrame({"source_row": np.arange(2, len(df) + 2, dtype=int)})  # 1-р мөр = толгой
     out["txn_date_raw"] = df[mapping["txn_date"]].astype(str).values
     out["txn_date"] = _parse_dates(df[mapping["txn_date"]], date_format).values
     out["product_ext_id"] = df[mapping["product_id"]].astype(str).str.strip().values
-    out["branch_ext_id"] = df[mapping["branch_id"]].astype(str).str.strip().values
+    if mapping.get("branch_id"):
+        out["branch_ext_id"] = df[mapping["branch_id"]].astype(str).str.strip().values
+    else:
+        out["branch_ext_id"] = (default_branch or DEFAULT_BRANCH).strip()
+    out["product_name"] = (df[mapping["product_name"]].astype(str).str.strip().values
+                           if mapping.get("product_name") else None)
+    out["product_category"] = (df[mapping["product_category"]].astype(str).str.strip().values
+                               if mapping.get("product_category") else None)
     out["qty"] = _to_float(df[mapping["qty"]]).values
-    out["unit"] = df[mapping["unit"]].astype(str).str.strip().values
+    if mapping.get("unit"):
+        out["unit"] = df[mapping["unit"]].astype(str).str.strip().values
+    else:
+        out["unit"] = (default_unit or DEFAULT_UNIT).strip()
     out["txn_id"] = (df[mapping["txn_id"]].astype(str).str.strip().values
                      if mapping.get("txn_id") else None)
     out["amount"] = _to_float(df[mapping["amount"]]).values if mapping.get("amount") else np.nan
