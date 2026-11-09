@@ -96,7 +96,7 @@ export default function Reports({ params }) {
   const filtered = cats.length || branch || products.length || q;
 
   if (exps.loading) return <Loading />;
-  if (!done.length) return (<><h1>Тайлан</h1><p className="muted">Бэлэн таамаглал алга. Менежер «Таамаглал бэлтгэх» хэсгийн 3 алхмыг дуусгасны дараа тайлан энд гарна.</p></>);
+  if (!done.length) return (<><h1>Тайлан</h1><p className="muted">Бэлэн таамаглал алга. Менежер «Таамаглал гаргуулах» хэсгийн 3 алхмыг дуусгасны дараа тайлан энд гарна.</p></>);
   const P = PERIOD[horizon];
 
   return (
