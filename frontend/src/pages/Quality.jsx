@@ -32,7 +32,9 @@ export default function Quality({ params, user }) {
       <ErrorNote error={report.error} />
       {report.loading ? <Loading /> : report.data && (
         <>
-          {report.data.usable
+          {report.data.usable && fullMonths(report.data.version) < 18
+            ? <div className="status-bar warn" role="status"><b>Алдаа алга, гэхдээ хэт богино</b><p>Энэ файлд {fullMonths(report.data.version)} бүтэн сарын борлуулалт л байна. Таамаглалд дор хаяж 18 сар хэрэгтэй — илүү урт хугацааны файл оруулна уу.</p></div>
+            : report.data.usable
             ? <div className="status-bar ok" role="status"><b>✓ Өгөгдөл бэлэн</b><p>Заавал засах алдаа алга. «Таамаглал гаргуулах» хэсэгт ашиглаж болно.{steward ? " Анхааруулгыг дараа ч шийдэж болно." : ""}</p></div>
             : <div className="status-bar bad" role="status"><b>{report.data.blocking_open} алдаа засагдах хүртэл</b><p>энэ файлаар таамаглал гаргахгүй. Бусад нь зөвхөн мэдээлэл — дараа ч шийдэж болно.</p></div>}
           <Counts r={report.data} />
@@ -45,7 +47,7 @@ export default function Quality({ params, user }) {
                 <tr key={i}>
                   <td><span className={`badge ${r.severity === "blocking" ? "bad" : r.severity === "warning" ? "warn" : "info"}`}>{SEVERITY[r.severity]}</span></td>
                   <td title={r.rule_id}>{RULE_PLAIN[r.rule_id] || r.rule_id}</td>
-                  <td className="num">{fmt(r.n, 0)}</td>
+                  <td className="num">{r.n_rows && r.n_rows !== r.n ? <>{fmt(r.n_rows, 0)} мөр<div className="facts-tech">{r.n} бараа</div></> : fmt(r.n, 0)}</td>
                   <td className="small">{RULE_SYSTEM_DID[r.rule_id] || "—"}</td>
                   <td>{r.action === "open"
                     ? (steward && r.severity !== "info" ? <button className="quiet mini" onClick={() => { setSev(r.severity); document.getElementById("issues")?.scrollIntoView({ behavior: "smooth" }); }}>Шийдэх</button> : <span className="muted small">{r.severity === "info" ? "Шаардлагагүй" : "Хүлээгдэж байна"}</span>)
@@ -162,6 +164,17 @@ function Decide({ issue, onDone }) {
       <ErrorNote error={err} />
     </div>
   );
+}
+
+// Бүтэн сарын тоо (backend-ийн last_complete_month-тай ижил дүрэм): эхний сар 1-нээс эхлээгүй бол хасна,
+// сүүлийн огноо сарын сүүлийн өдөр биш бол тэр сарыг хасна
+function fullMonths(v) {
+  if (!v?.date_min || !v?.date_max) return 0;
+  const [y1, m1, d1] = v.date_min.split("-").map(Number), [y2, m2, d2] = v.date_max.split("-").map(Number);
+  const first = y1 * 12 + (m1 - 1) + (d1 === 1 ? 0 : 1);
+  const lastDay = new Date(Date.UTC(y2, m2, 0)).getUTCDate();
+  const last = y2 * 12 + (m2 - 1) - (d2 === lastDay ? 0 : 1);
+  return Math.max(0, last - first + 1);
 }
 
 // Ач холбогдлын тоо: заавал засах / анхааруулга / мэдээлэл (нээлттэй асуудлын тоо)

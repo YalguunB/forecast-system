@@ -50,12 +50,15 @@ def test_mase_scale_skips_pairs_with_gap_without_shifting():
 
 
 def test_origin_counts_match_protocol():
+    """Сарын протокол (006): validation 12, тест 12 сар; сарын эхлэл бүрээс 1 сарын таамаглал."""
     sp = make_splits(pd.Timestamp("2026-09-30"))
-    assert len(origins_for(sp.val_start, sp.val_end)) == 5
-    assert len(origins_for(sp.test_start, sp.test_end)) == 9
-    for o in origins_for(sp.test_start, sp.test_end):
-        assert o + pd.Timedelta(days=30) <= sp.test_end
-    assert (sp.test_end - sp.test_start).days == 89 and (sp.val_end - sp.val_start).days == 59
+    val, test = origins_for(sp.val_start, sp.val_end), origins_for(sp.test_start, sp.test_end)
+    assert len(val) == 12 and len(test) == 12
+    assert all(o.day == 1 for o in val + test)
+    for o in test:
+        assert o + pd.DateOffset(months=1) <= sp.test_end           # зорилтот сар тестийн хүрээнд
+    assert max(val) < sp.test_start                                 # validation тесттэй давхцахгүй
+    assert sp.test_start.to_period("M") - sp.val_start.to_period("M") == 12 * sp.test_start.to_period("M").freq
 
 
 def test_croston_and_sba():
@@ -71,12 +74,12 @@ def test_croston_and_sba():
 
 
 def test_failure_falls_back_and_is_reported():
-    idx = pd.date_range("2025-01-01", periods=10)
-    y = pd.Series(np.arange(10, dtype=float), index=idx)
-    ctx = FitContext(series_id=1, origin=idx[-1], target="sales", horizon=5, seed=1)
-    fc, err = run_series(make_model("ets"), y, ctx, make_model("naive"))   # ETS 28 хоног шаардана
+    idx = pd.date_range("2025-01-01", periods=5, freq="MS")
+    y = pd.Series(np.arange(5, dtype=float), index=idx)
+    ctx = FitContext(series_id=1, origin=idx[-1], target="sales", horizon=3, seed=1)
+    fc, err = run_series(make_model("ets"), y, ctx, make_model("naive"))   # ETS дор хаяж 8 сар шаардана
     assert err is not None and "богино" in err
-    assert (fc["y_hat"] == 9.0).all()
+    assert (fc["y_hat"] == 4.0).all()                                     # naive: сүүлийн сар
 
 
 def test_classification_thresholds():

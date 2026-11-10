@@ -6,6 +6,7 @@ import { ErrorNote, Intro, JobProgress, useLoad } from "../components.jsx";
 const FIELD_LABELS = {
   txn_date: "Огноо", product_id: "Бүтээгдэхүүний код", product_name: "Бүтээгдэхүүний нэр", product_category: "Бүтээгдэхүүний ангилал", branch_id: "Салбарын код", qty: "Хэмжээ",
   unit: "Хэмжих нэгж", txn_id: "Гүйлгээний дугаар", amount: "Мөнгөн дүн", is_return: "Буцаалтын тэмдэг",
+  order_status: "Захиалгын төлөв",
 };
 // [талбар, гарчиг, юунд хэрэгтэй, файлын баганууд]
 const AUX = [
@@ -211,7 +212,8 @@ function MappingTable({ preview, mapping, setMapping }) {
             const st = col ? ["ok", "Таньсан"] : req.has(fld) && !optionalDefault(fld) ? ["bad", "Сонгоно уу"] : req.has(fld) ? ["warn", "Доор нэг утга өгнө"] : ["", "Заавал биш"];
             return (
               <tr key={fld} style={st[0] === "bad" || st[0] === "warn" ? { background: "var(--saffron-soft)" } : null}>
-                <td><b>{FIELD_LABELS[fld]}</b>{req.has(fld) ? <span className="muted small"> · заавал</span> : null}</td>
+                <td><b>{FIELD_LABELS[fld]}</b>{req.has(fld) ? <span className="muted small"> · заавал</span> : null}
+                  {fld === "order_status" && <div className="facts-tech">«Cancelled», «Returned» захиалга → борлуулалтад тооцохгүй (анхны мөр хадгалагдана)</div>}</td>
                 <td style={{ minWidth: 200 }}>
                   <select aria-label={`${FIELD_LABELS[fld]}: багана`} value={col || ""} onChange={(e) => setMapping({ ...mapping, [fld]: e.target.value || null })}>
                     <option value="">— байхгүй —</option>

@@ -61,13 +61,19 @@ function List() {
           <select id="v" value={form.version} onChange={(e) => setForm({ ...form, version: e.target.value })}>
             {usable.map((v) => <option key={v.id} value={v.id}>{v.dataset} v{v.version_no} ({v.date_min} – {v.date_max})</option>)}
           </select>
-          {info && P && (
-            <p className={`small ${info.full_months < 18 ? "notice bad" : "muted"}`} style={{ margin: "0.4rem 0 0" }}>
+          {info && P && info.full_months >= (info.min_months || 18) && (
+            <p className="small muted" style={{ margin: "0.4rem 0 0" }}>
               {info.full_months} бүтэн сарын өгөгдөл ({monthLabel(info.first_full_month)}–{monthLabel(info.last_full_month)}). Аргууд эхний саруудаас сурч,
               {" "}дараагийн {P.val_months} сард дадлага шалгалт, сүүлийн {P.test_months} сард эцсийн шалгалт өгнө.
               {!info.year_horizon_testable && " Шалгах хугацаа 12 сараас богино тул жилийн таамаглалын алдааг хэмжих боломжгүй (таамаглал гарна)."}
-              {info.full_months < 18 && " Өгөгдөл хэт богино — дор хаяж 18 бүтэн сар шаардлагатай."}
             </p>)}
+          {info && info.full_months < (info.min_months || 18) && (
+            <div className="notice bad small" role="alert"><b>Энэ файлаар таамаглал гаргах боломжгүй.</b> Таамаглалд дор хаяж {info.min_months || 18} бүтэн сарын
+              борлуулалт хэрэгтэй, харин энэ файлд {info.full_months} сар л байна. Илүү урт хугацааны файл оруулна уу.</div>)}
+          {info && info.full_months >= (info.min_months || 18) && info.sales_month_share != null && info.sales_month_share < 0.5 && (
+            <div className="notice warn small" role="alert"><b>Өгөгдөл сийрэг байна.</b> Ихэнх бараа саруудын зөвхөн {Math.round(info.sales_month_share * 100)}%-д л
+              зарагдсан тул бараа бүрийн таамаглал найдвартай биш байх магадлалтай. Илүү найдвартай болгох бол өгөгдөл оруулахдаа «Бүтээгдэхүүний код»-д
+              ангиллын баганыг сонгож, ангиллаар нь таамаглуулна уу.</div>)}
           <label htmlFor="t" style={{ marginTop: 8 }}>Юуг таамаглах <Help k="sales_vs_demand" /></label>
           <select id="t" value={form.target} onChange={(e) => setForm({ ...form, target: e.target.value })}>
             <option value="sales">Борлуулалт (ихэнх тохиолдолд үүнийг сонгоно)</option>
@@ -104,7 +110,7 @@ function List() {
             </>
           )}
           </details>
-          <button style={{ marginTop: 12 }} disabled={!form.name || !usable.length || !defaults.data} onClick={create}>Үүсгэх</button>
+          <button style={{ marginTop: 12 }} disabled={!form.name || !usable.length || !defaults.data || (info && info.full_months < (info.min_months || 18))} onClick={create}>Үүсгэх</button>
           {!usable.length && <p className="small muted">Ашиглах боломжтой өгөгдөл алга — эхлээд өгөгдөл оруулж, чанарын алдааг засна.</p>}
           <ErrorNote error={err} />
         </div>
@@ -257,6 +263,11 @@ function Results({ id, status }) {
         <>
           <h2>Эцсийн шалгалтын дүн <Help k="test" /></h2>
           <div className="result-cards">{r.test.map((t) => {
+            if (!t.n_compared) return (
+              <div className="panel" key={t.horizon}>
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}><b>{t.period}ын таамаглал</b><span className="grade">Хэмжих боломжгүй</span></div>
+                <p>Эцсийн шалгалтын хугацаа {t.horizon} сараас богино тул {t.period.toLowerCase()}ын алдааг хэмжиж чадсангүй. Таамаглал гарсан ч найдвартай эсэх нь тодорхойгүй — илүү урт хугацааны өгөгдөл хэрэгтэй.</p>
+              </div>);
             const a = accuracyLevel(t.selected_WAPE.median, t.baseline_WAPE.median);
             const n = Math.round((t.share_improved_vs_baseline ?? 0) * t.n_compared);
             return (

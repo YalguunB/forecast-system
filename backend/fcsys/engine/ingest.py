@@ -12,7 +12,8 @@ REQUIRED_FIELDS = ["txn_date", "product_id", "qty"]
 # branch_id, unit заавал биш: зураглаагүй бол бүх мөрд тогтмол утга (DEFAULT_BRANCH, DEFAULT_UNIT
 # эсвэл хэрэглэгчийн өгсөн default_branch / default_unit) онооно. Нэг салбартай, нэг нэгжтэй
 # байгууллагад ч, онлайн дэлгүүрийн өгөгдөлд ч ажиллана.
-OPTIONAL_FIELDS = ["product_name", "product_category", "branch_id", "unit", "txn_id", "amount", "is_return"]
+OPTIONAL_FIELDS = ["product_name", "product_category", "branch_id", "unit", "txn_id", "amount", "is_return",
+                   "order_status"]
 DEFAULT_BRANCH = "ALL"
 DEFAULT_UNIT = "ширхэг"
 
@@ -29,7 +30,17 @@ _HINTS = {
     "txn_id": ["txn_id", "order_id", "orderid", "transaction", "receipt", "баримт"],
     "amount": ["amount", "revenue", "totalsales", "дүн", "total", "value"],
     "is_return": ["return", "буцаалт", "is_return"],
+    "order_status": ["orderstatus", "order_status", "status", "төлөв"],
 }
+
+# Захиалгын төлөвийн утга (DQ-11): цуцлагдсан ба буцаагдсан захиалга → борлуулалтад тооцохгүй.
+# «Returned» мөр нь тусдаа буцаалтын гүйлгээ биш, харин буцаагдсан анхны захиалга өөрөө тул цэвэр
+# борлуулалтад 0 нөлөөтэй; буцаалт (is_return) гэж тэмдэглэвэл тэр өдрийн бусад борлуулалтаас дахин
+# хасагдаж давхар тооцогддог байв (Amazon 2024 файлын шалгалтаар илэрсэн).
+# Бусад (Delivered, Shipped, Pending, Completed …) → борлуулалт.
+CANCEL_STATUSES = {"cancelled", "canceled", "cancel", "void", "voided", "failed", "rejected", "declined",
+                   "цуцалсан", "цуцлагдсан", "цуцлах"}
+RETURN_STATUSES = {"returned", "return", "refunded", "refund", "буцаасан", "буцаагдсан", "буцаалт"}
 
 AUX_COLUMNS = {
     "price": ["date", "product_id", "branch_id", "price", "price_kind", "known_at"],
@@ -169,6 +180,14 @@ def parse_transactions(df: pd.DataFrame, mapping: dict, date_format: str | None 
     else:
         out["is_return"] = False
     out.loc[out["qty"] < 0, "is_return"] = True   # сөрөг хэмжээ = буцаалт (DQ-05)
+    if mapping.get("order_status"):
+        st = df[mapping["order_status"]].astype(str).str.strip()
+        low = st.str.lower()
+        out["order_status"] = st.values
+        out["is_cancelled"] = (low.isin(CANCEL_STATUSES) | low.isin(RETURN_STATUSES)).values
+    else:
+        out["order_status"] = None
+        out["is_cancelled"] = False
     return out
 
 

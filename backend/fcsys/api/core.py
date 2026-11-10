@@ -58,6 +58,9 @@ def make_token(user: dict) -> str:
 
 
 def get_conn() -> Iterator[psycopg.Connection]:
+    """Хүсэлт бүрийн холболт. Заавал Depends(get_conn, scope="function")-оор ашиглана: commit нь хариу
+    илгээхээс ӨМНӨ хийгдэнэ. Анхдагч scope-д commit хариуны дараа хийгддэг тул ачаалал ихтэй үед клиентийн
+    дараагийн хүсэлт (жишээ нь шинэ туршилтын validate, шинэ ажлын төлөв) мөрийг олохгүй 404 авдаг байв."""
     conn = connect()
     try:
         yield conn
@@ -69,7 +72,7 @@ def get_conn() -> Iterator[psycopg.Connection]:
         conn.close()
 
 
-def current_user(token: str = Depends(oauth2), conn: psycopg.Connection = Depends(get_conn)) -> dict:
+def current_user(token: str = Depends(oauth2), conn: psycopg.Connection = Depends(get_conn, scope="function")) -> dict:
     try:
         payload = jwt.decode(token, get_settings().jwt_secret, algorithms=["HS256"])
     except jwt.PyJWTError:

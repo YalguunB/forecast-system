@@ -103,7 +103,10 @@ function Overview({ eid }) {
       <div className="tabs" role="tablist">
         {HORIZONS.map(([h, l]) => <button key={h} role="tab" aria-selected={hz === h} className={hz === h ? "on" : ""} onClick={() => setHz(h)}>{l}ын таамаглал</button>)}
       </div>
-      {t && (
+      {t && !t.n_compared && (
+        <div className="notice warn">{HORIZONS.find(([h]) => h === hz)?.[1]}ын таамаглалын алдааг эцсийн шалгалтаар хэмжих боломжгүй: шалгах хугацаа {hz} сараас богино.</div>
+      )}
+      {t && t.n_compared > 0 && (
         <div className="summary">
           <div className="big">{pct(t.share_improved_vs_baseline)}<small>бараанд энгийн аргаас сайн</small></div>
           <div>

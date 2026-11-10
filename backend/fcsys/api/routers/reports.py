@@ -171,7 +171,7 @@ def build_dashboard(conn, user, experiment_id: int, horizon: int, history_months
 
 @router.get("/reports/dashboard")
 def dashboard(experiment_id: int, horizon: int = Query(12), history_months: int = Query(24, ge=6, le=120),
-              conn=Depends(get_conn), user=Depends(require("forecast_view"))):
+              conn=Depends(get_conn, scope="function"), user=Depends(require("forecast_view"))):
     return build_dashboard(conn, user, experiment_id, horizon, history_months)
 
 
@@ -210,7 +210,7 @@ def _group_table(series: list[dict], key: str, label: str, months: list) -> pd.D
 
 
 @router.get("/reports/summary.xlsx")
-def summary_xlsx(experiment_id: int, horizon: int = Query(12), conn=Depends(get_conn),
+def summary_xlsx(experiment_id: int, horizon: int = Query(12), conn=Depends(get_conn, scope="function"),
                  user=Depends(require("export"))):
     """Ангиллаар, бүтээгдэхүүний нэрээр, салбараар нэгтгэсэн тайлан (Excel)."""
     rep = build_dashboard(conn, user, experiment_id, horizon, 24)

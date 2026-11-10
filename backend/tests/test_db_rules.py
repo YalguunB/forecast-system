@@ -12,7 +12,7 @@ from fcsys.db import jsonb
 def base(app_conn):
     c = app_conn
     uid = c.execute("INSERT INTO governance.app_user (username, password_hash, roles) VALUES "
-                    "('rules_' || md5(random()::text), 'x', '{researcher}') RETURNING id").fetchone()["id"]
+                    "('rules_' || md5(random()::text), 'x', '{manager}') RETURNING id").fetchone()["id"]
     ds = c.execute("INSERT INTO raw.dataset (name, created_by) VALUES ('rules_' || md5(random()::text), %s) "
                    "RETURNING id", (uid,)).fetchone()["id"]
     vid = c.execute("INSERT INTO raw.dataset_version (dataset_id, version_no, file_name, stored_path, sha256, mapping, "
@@ -69,9 +69,9 @@ def test_test_run_requires_locked_and_selection_frozen(base):
     _raises(c, run, (eid, "test", jsonb({"x": 1})), "locked")              # validating үед тест хориотой
     sel = ("INSERT INTO experiment.model_selection (experiment_id, series_id, horizon, run_id, rule, selection_level, "
            "selected_on) VALUES (%s,%s,%s,%s,'r','global',%s)")
-    _raises(c, sel, (eid, sid, 7, vrun, "test"), "selected_on")             # FR-M4: зөвхөн validation
-    _raises(c, sel, (eid, sid, 10, vrun, "validation"), "horizon")
-    c.execute(sel, (eid, sid, 7, vrun, "validation"))
+    _raises(c, sel, (eid, sid, 1, vrun, "test"), "selected_on")             # FR-M4: зөвхөн validation
+    _raises(c, sel, (eid, sid, 7, vrun, "validation"), "horizon")           # сарын хүрээ 1, 3, 12 л
+    c.execute(sel, (eid, sid, 1, vrun, "validation"))
     c.execute("UPDATE experiment.experiment SET status='validation_done' WHERE id=%s", (eid,))
     _raises(c, "UPDATE experiment.model_selection SET rule='x' WHERE experiment_id=%s", (eid,), "frozen")
     c.execute("UPDATE experiment.experiment SET status='locked', selection_hash='s' WHERE id=%s", (eid,))
@@ -87,14 +87,18 @@ def test_forecast_value_constraints(base):
                     "RETURNING run_id", (eid,)).fetchone()["run_id"]
     ins = ("INSERT INTO forecast.forecast_value (run_id, series_id, split, origin_date, h, target_date, y_hat, q_lo, q_hi) "
            "VALUES (%s,%s,%s,'2025-01-01',%s,%s,1.0,%s,%s)")
-    c.execute(ins, (rid, sid, "validation", 1, "2025-01-02", None, None))
-    _raises(c, ins, (rid, sid, "validation", 2, "2025-01-05", None, None))   # target_date ≠ o + h
-    _raises(c, ins, (rid, sid, "validation", 31, "2025-02-01", None, None))  # h > 30
-    _raises(c, ins, (rid, sid, "test", 3, "2025-01-04", None, None))         # split ≠ run.phase (FK)
-    _raises(c, ins, (rid, sid, "validation", 1, "2025-01-02", None, None))   # давхардсан түлхүүр
-    _raises(c, ins, (rid, sid, "validation", 4, "2025-01-05", 1.0, None))    # зөвхөн нэг хязгаар
+    # Сарын түвшин (006_monthly): эхлэл = сарын 1, зорилтот сар = эхлэл + h сар, h = 1..12
+    c.execute(ins, (rid, sid, "validation", 1, "2025-02-01", None, None))
+    _raises(c, ins, (rid, sid, "validation", 2, "2025-04-01", None, None))   # target_date ≠ o + h сар
+    _raises(c, ins, (rid, sid, "validation", 13, "2026-02-01", None, None))  # h > 12
+    _raises(c, ins, (rid, sid, "test", 3, "2025-04-01", None, None))         # split ≠ run.phase (FK)
+    _raises(c, ins, (rid, sid, "validation", 1, "2025-02-01", None, None))   # давхардсан түлхүүр
+    _raises(c, ins, (rid, sid, "validation", 4, "2025-05-01", 1.0, None))    # зөвхөн нэг хязгаар
+    _raises(c, ins.replace("'2025-01-01'", "'2025-01-15'"), (rid, sid, "validation", 1, "2025-02-15", None, None))  # эхлэл сарын 1 биш
     _raises(c, "INSERT INTO forecast.error_metric (run_id, series_id, split, horizon, metric, value, n_pairs) "
-               "VALUES (%s,%s,'validation',7,'MASE',NULL,5)", (rid, sid), "check")  # undefined_reason заавал
+               "VALUES (%s,%s,'validation',1,'MASE',NULL,5)", (rid, sid), "check")  # undefined_reason заавал
+    _raises(c, "INSERT INTO forecast.error_metric (run_id, series_id, split, horizon, metric, value, n_pairs) "
+               "VALUES (%s,%s,'validation',7,'MASE',1.0,5)", (rid, sid), "horizon")  # сарын хүрээ 1, 3, 12 л
 
 
 def test_append_only_tables(base):
@@ -113,4 +117,6 @@ def test_dq_issue_original_value_kept(base):
     c.execute("UPDATE curated.data_quality_issue SET action='corrected', corrected_value='3', reason='typo', "
               "resolved_by=%s WHERE id=%s", (base["uid"], iid))
     _raises(c, "UPDATE curated.data_quality_issue SET original_value='3' WHERE id=%s", (iid,), "immutable")
-    _raises(c, "UPDATE curated.data_quality_issue SET rule_id='DQ-11' WHERE id=%s", (iid,))
+    _raises(c, "UPDATE curated.data_quality_issue SET rule_id='DQ-02' WHERE id=%s", (iid,))   # дүрмийн дугаар өөрчлөгдөхгүй
+    _raises(c, "INSERT INTO curated.data_quality_issue (dataset_version_id, rule_id, severity, message) "
+               "VALUES (%s,'DQ-12','info','m')", (base["vid"],), "check")                           # DQ-01–DQ-11 л

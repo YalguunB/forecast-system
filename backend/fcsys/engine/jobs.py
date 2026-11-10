@@ -131,10 +131,11 @@ def handle_import(conn, job: dict, url: str) -> None:
                                    mapping.get("default_branch"), mapping.get("default_unit"))
     copy_rows(conn, "raw.raw_transaction",
               ["dataset_version_id", "source_row", "txn_id", "txn_date", "txn_date_raw", "product_ext_id",
-               "branch_ext_id", "qty", "unit", "amount", "is_return"],
+               "branch_ext_id", "qty", "unit", "amount", "is_return", "order_status", "is_cancelled"],
               zip([vid] * len(tx), tx["source_row"], tx["txn_id"] if tx["txn_id"].notna().any()
                   else [None] * len(tx), tx["txn_date"], tx["txn_date_raw"], tx["product_ext_id"],
-                  tx["branch_ext_id"], tx["qty"], tx["unit"], tx["amount"], tx["is_return"]))
+                  tx["branch_ext_id"], tx["qty"], tx["unit"], tx["amount"], tx["is_return"],
+                  tx["order_status"], tx["is_cancelled"]))
 
     aux = {k: ingest.parse_aux(k, path) for k, path in (p.get("aux") or {}).items()}
     set_progress(url, job["id"], stage="Чанарын шалгалт", rows=len(tx))
@@ -149,6 +150,8 @@ def _build_and_store(conn, ver: dict, tx: pd.DataFrame, res: dq.ValidationResult
                      mapping: dict, regrid: bool = False, drop_rows: set[int] | None = None) -> None:
     vid = ver["id"]
     clean = tx[~tx["source_row"].isin(res.quarantined_rows | (drop_rows or set()))]
+    if "is_cancelled" in clean:   # DQ-11: цуцлагдсан захиалга борлуулалт биш
+        clean = clean[~clean["is_cancelled"].astype(bool)]
     clean = grid.convert_units(clean, mapping.get("unit_conversions"))
     valid_dates = clean["txn_date"].dropna()
     date_max = valid_dates.max() if len(valid_dates) else None
@@ -321,10 +324,10 @@ def handle_validate(conn, job: dict, url: str) -> str:
         items.append((sid, sid in chosen, None if sid in chosen else f"дэд багцад сонгогдоогүй (seed {seed})"))
     if not chosen:
         need = proto["train_min_months"] + proto["val_months"] + proto["test_months"]
-        raise JobError(f"Туршилтад орох цуваа алга: цуваа бүр дор хаяж {need} бүтэн сарын түүхтэй байх ёстой "
-                       f"(сургалт {proto['train_min_months']} + validation {proto['val_months']} + тест "
-                       f"{proto['test_months']} сар), энэ өгөгдлийн хамгийн урт цуваа {longest} бүтэн сар. "
-                       f"Илүү урт хугацааны өгөгдөл оруулна уу, эсвэл сургалт/validation/тестийн хугацааг богиносгоно уу.")
+        raise JobError(f"Таамаглал гаргахад бараа бүрт дор хаяж {need} бүтэн сарын борлуулалт хэрэгтэй "
+                       f"(сурах {proto['train_min_months']}, дадлага шалгалт {proto['val_months']}, эцсийн шалгалт "
+                       f"{proto['test_months']} сар), харин энэ файлын хамгийн урт түүх {longest} бүтэн сар. "
+                       f"Илүү урт хугацааны борлуулалтын файл оруулна уу.")
 
     conn.execute("DELETE FROM experiment.series_sample_item WHERE sample_id IN "
                  "(SELECT id FROM experiment.series_sample WHERE experiment_id=%s)", (exp["id"],))

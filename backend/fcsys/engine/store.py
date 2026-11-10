@@ -41,10 +41,10 @@ def _clean(v):
 def load_transactions(conn, version_id: int) -> pd.DataFrame:
     rows = conn.execute(
         "SELECT source_row, txn_id, txn_date, txn_date_raw, product_ext_id, branch_ext_id, qty, unit, "
-        "amount, is_return FROM raw.raw_transaction WHERE dataset_version_id = %s ORDER BY source_row",
+        "amount, is_return, is_cancelled FROM raw.raw_transaction WHERE dataset_version_id = %s ORDER BY source_row",
         (version_id,)).fetchall()
     df = pd.DataFrame(rows, columns=["source_row", "txn_id", "txn_date", "txn_date_raw", "product_ext_id",
-                                     "branch_ext_id", "qty", "unit", "amount", "is_return"])
+                                     "branch_ext_id", "qty", "unit", "amount", "is_return", "is_cancelled"])
     df["txn_date"] = pd.to_datetime(df["txn_date"])
     for c in ("qty", "amount"):
         df[c] = pd.to_numeric(df[c], errors="coerce").astype(float)
