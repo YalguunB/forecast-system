@@ -156,7 +156,7 @@ def series_level_checks(daily: pd.DataFrame) -> list[Issue]:
         spans[(pid, bid)] = (g["day"].iloc[0], g.loc[g.sales_qty > 0, "day"].max(), n_days,
                              g.loc[g.sales_qty > 0, "sales_qty"].mean())
         # DQ-08 — гүйлгээгүй өдөр төлөвтэй болсон тухай мэдээлэл (0 болгоогүй)
-        no_txn = g[g.day_state != "sold"]
+        no_txn = g[~g.day_state.isin(["sold", "sold_out"])]
         if len(no_txn):
             counts = no_txn.day_state.value_counts().to_dict()
             issues.append(Issue("DQ-08", "info",

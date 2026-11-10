@@ -150,7 +150,7 @@ class SARIMA(Forecaster):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             self._res = SARIMAX(y, order=order, seasonal_order=(*seasonal, SEASON if any(seasonal) else 0),
-                                enforce_stationarity=False, enforce_invertibility=False).fit(disp=False, maxiter=100)
+                                enforce_stationarity=True, enforce_invertibility=True).fit(disp=False, maxiter=100)
 
     def predict(self, ctx):
         with warnings.catch_warnings():

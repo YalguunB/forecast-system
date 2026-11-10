@@ -8,14 +8,15 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-DAY_STATES = ["sold", "open_no_sale", "stockout", "closed", "missing", "unknown"]
+DAY_STATES = ["sold", "open_no_sale", "stockout", "sold_out", "closed", "missing", "unknown"]
 
 # Зорилтод орох эсэх (Хүснэгт 3.8-ын сүүлийн багана). None = зорилтоос хасна (NaN).
 TARGET_RULES = {
-    "sales":  {"sold": "qty", "open_no_sale": 0.0, "stockout": 0.0, "unknown": 0.0,
+    "sales":  {"sold": "qty", "sold_out": "qty", "open_no_sale": 0.0, "stockout": 0.0, "unknown": 0.0,
                "closed": None, "missing": None},
     # Эрэлт D: нөөцгүй өдөр халхлагдсан (censored) тул ажиглагдсан утга эрэлт биш → хасна.
-    "demand": {"sold": "qty", "open_no_sale": 0.0, "stockout": None, "unknown": 0.0,
+    # sold_out: өдөртөө бүгд зарагдсан → борлуулалт нь эрэлтийн доод хязгаар (хэсэгчлэн халхлагдсан) → хасна.
+    "demand": {"sold": "qty", "sold_out": None, "open_no_sale": 0.0, "stockout": None, "unknown": 0.0,
                "closed": None, "missing": None},
 }
 
@@ -97,6 +98,9 @@ def build_daily(tx: pd.DataFrame, date_max: pd.Timestamp,
             in_stock = known & ~out_of_stock
             state[no_sale & out_of_stock] = "stockout"
             state[no_sale & in_stock] = "open_no_sale"
+            # Өглөө нөөц байсан ч өдөртөө бүгд зарагдсан: эрэлт борлуулалтаас их байсан байж магадгүй
+            sold_out = (~no_sale) & in_stock & pd.notna(onhand) & (net.values >= np.nan_to_num(onhand, nan=np.inf))
+            state[sold_out] = "sold_out"
 
         b_active = branch_active.reindex(
             pd.MultiIndex.from_arrays([[bid] * len(f), f["day"]])).fillna(0).values
