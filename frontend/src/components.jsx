@@ -34,17 +34,17 @@ export function JobProgress({ jobId, onDone }) {
     waitJob(jobId, (j) => alive && setJob(j)).then((j) => alive && onDone?.(j));
     return () => { alive = false; };
   }, [jobId]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!job) return <p className="muted small">Ажил #{jobId} эхэлж байна…</p>;
+  if (!job) return <p className="muted small">Эхэлж байна…</p>;
   const running = ["queued", "running"].includes(job.status);
   return (
     <div className="panel" aria-live="polite">
       <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
         <div>
-          <b>Ажил #{job.id}</b> — {JOB_STATUS[job.status]}
+          <b>{JOB_STATUS[job.status]}</b>
           {job.progress?.stage ? <span className="muted"> · {job.progress.stage}</span> : null}
         </div>
         {running && (
-          <button className="quiet" onClick={() => api.post(`/jobs/${job.id}/cancel`)}>Ажлыг цуцлах</button>
+          <button className="quiet" onClick={() => api.post(`/jobs/${job.id}/cancel`)}>Цуцлах</button>
         )}
       </div>
       {job.percent !== null && job.percent !== undefined && (

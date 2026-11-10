@@ -36,7 +36,7 @@ def _sum_or_none(vals):
 
 def build_dashboard(conn, user, experiment_id: int, horizon: int, history_months: int) -> dict:
     if horizon not in HORIZONS:
-        raise ApiError(422, "invalid_params", "horizon ∈ {1, 3, 12} (сар, улирал, жил)")
+        raise ApiError(422, "invalid_params", "Хугацаа буруу байна")
     e = conn.execute("SELECT e.*, v.date_max, v.version_no, d.name AS dataset FROM experiment.experiment e "
                      "JOIN raw.dataset_version v ON v.id=e.dataset_version_id JOIN raw.dataset d ON d.id=v.dataset_id "
                      "WHERE e.id=%s", (experiment_id,)).fetchone()
@@ -44,7 +44,7 @@ def build_dashboard(conn, user, experiment_id: int, horizon: int, history_months
         raise not_found("Туршилт", experiment_id)
     require_monthly(e)
     if e["status"] != "test_done":
-        raise ApiError(409, "not_ready", "Тайлан тест дууссан туршилтад л гарна")
+        raise ApiError(409, "not_ready", "Таамаглал бэлэн болоогүй байна")
 
     series = conn.execute(
         "SELECT s.id, s.product_id, s.product_name, coalesce(nullif(s.product_category, ''), %s) AS category, "
@@ -164,8 +164,7 @@ def build_dashboard(conn, user, experiment_id: int, horizon: int, history_months
         "validation": [{"model": r["model"], "params": r["params"], "role": r["role"], "horizon": r["horizon"],
                         "wape": _f(r["wape"]), "n": r["n"]} for r in val],
         "states": states,
-        "note": "Хугацааны нийлбэр нь сарын цэгэн таамаглалын нийлбэр; интервалын хязгаарыг нэмээгүй. "
-                "Өмнөх оны харьцуулалт нь ижил саруудын бодит борлуулалт (бүтэн сар байвал).",
+        "note": "Улирал, жилийн дүн нь сар бүрийн таамаглалын нийлбэр.",
     }
 
 

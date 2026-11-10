@@ -70,7 +70,10 @@ def defaults(dataset_version_id: int | None = None, conn=Depends(get_conn, scope
                 (dataset_version_id,)).fetchone()
             info = {"full_months": n, "first_full_month": str(first), "last_full_month": str(last_complete_month(v["date_max"]).date()),
                     "year_horizon_testable": proto["test_months"] >= 12, "min_months": MIN_FULL_MONTHS,
-                    "n_series": dens["n_series"], "sales_month_share": dens["med"]}
+                    "n_series": dens["n_series"], "sales_month_share": dens["med"],
+                    "has_inventory": conn.execute(
+                        "SELECT 1 FROM curated.inventory_snapshot WHERE dataset_version_id=%s AND reliability='reliable' LIMIT 1",
+                        (dataset_version_id,)).fetchone() is not None}
     cats = []
     if dataset_version_id:
         cats = [r["c"] for r in conn.execute(
@@ -101,7 +104,7 @@ def create_experiment(body: ExperimentIn, conn=Depends(get_conn, scope="function
         raise not_found("Өгөгдлийн хувилбар", body.dataset_version_id)
     if v["status"] != "validated" or v["archived_at"]:
         raise ApiError(409, "version_not_usable",
-                       "Зөвхөн «шалгагдсан», архивлаагүй хувилбараар туршилт үүсгэнэ (UC-04 өмнөх нөхцөл)",
+                       "Энэ файл шалгалтад тэнцээгүй эсвэл архивлагдсан байна",
                        {"status": v["status"]})
     proto = _protocol(body.protocol)
     if branch_scope(user) is not None:           # менежер: зөвхөн өөрийн салбарын цуваа
@@ -110,7 +113,7 @@ def create_experiment(body: ExperimentIn, conn=Depends(get_conn, scope="function
             "SELECT 1 FROM curated.inventory_snapshot WHERE dataset_version_id=%s AND reliability='reliable' LIMIT 1",
             (body.dataset_version_id,)).fetchone():
         raise ApiError(422, "demand_requires_inventory",
-                       "Эрэлтийн (D) зорилтод найдвартай нөөцийн хүртээмжийн өгөгдөл шаардлагатай (R2)")
+                       "Эрэлт таамаглахад нөөцийн файл хэрэгтэй. Өгөгдөл оруулахдаа нөөцийн файлыг хамт оруулна уу.")
     row = conn.execute("INSERT INTO experiment.experiment (name, dataset_version_id, target, protocol, created_by) "
                        "VALUES (%s,%s,%s,%s,%s) RETURNING *",
                        (body.name, body.dataset_version_id, body.target, jsonb(proto), user["id"])).fetchone()
@@ -134,7 +137,7 @@ def update_protocol(eid: int, body: ProtocolIn, conn=Depends(get_conn, scope="fu
     proto = _protocol(body.protocol)
     if e["status"] != "draft":
         audit_rejected(user["id"], "protocol_change_rejected", "experiment", eid, {"status": e["status"]})
-        raise ApiError(409, "experiment_locked", "Протокол түгжигдсэн — өөрчлөх бол шинэ туршилт үүсгэнэ (UC-04 6а)",
+        raise ApiError(409, "experiment_locked", "Тохиргоо батлагдсан тул өөрчлөх боломжгүй. Шинэ таамаглал үүсгэнэ үү.",
                        {"status": e["status"]})
     row = conn.execute("UPDATE experiment.experiment SET protocol=%s, target=coalesce(%s, target) WHERE id=%s "
                        "RETURNING *", (jsonb(proto), body.target, eid)).fetchone()
@@ -157,7 +160,7 @@ def start_validation(eid: int, conn=Depends(get_conn, scope="function"), user=De
     elif e["status"] == "validating" and active and active["status"] in ("failed", "cancelled"):
         pass   # протокол аль хэдийн түгжигдсэн; бүтэлгүй ажлыг ижил протоколоор дахин ажиллуулна
     else:
-        raise ApiError(409, "invalid_state", f"Validation эхлүүлэх боломжгүй (төлөв: {e['status']})",
+        raise ApiError(409, "invalid_state", "Аргуудыг одоо турших боломжгүй",
                        {"status": e["status"]})
     job = conn.execute("INSERT INTO governance.job (type, payload, created_by) VALUES ('validate', %s, %s) RETURNING id",
                        (jsonb({"experiment_id": eid}), user["id"])).fetchone()
@@ -188,7 +191,7 @@ def lock_selection(eid: int, conn=Depends(get_conn, scope="function"), user=Depe
     require_monthly(e)
     if e["status"] != "validation_done":
         audit_rejected(user["id"], "lock_rejected", "experiment", eid, {"status": e["status"]})
-        raise ApiError(409, "invalid_state", f"Сонголтыг зөвхөн validation дууссаны дараа түгжинэ (төлөв: {e['status']})")
+        raise ApiError(409, "invalid_state", "Аргуудыг туршиж дууссаны дараа батална")
     sel = conn.execute("SELECT series_id, horizon, run_id, rule FROM experiment.model_selection WHERE experiment_id=%s "
                        "ORDER BY series_id, horizon", (eid,)).fetchall()
     shash = canonical_hash({"protocol_hash": e["protocol_hash"], "selection": [dict(r) for r in sel]})

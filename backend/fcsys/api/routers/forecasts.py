@@ -45,12 +45,11 @@ def _run_for(conn, eid: int, sid: int, horizon: int, split: str, run_id: int | N
                        "ON r.run_id=ms.run_id WHERE ms.experiment_id=%s AND ms.series_id=%s AND ms.horizon=%s",
                        (eid, sid, horizon)).fetchone()
     if not sel:
-        raise ApiError(404, "no_selection", "Энэ цуваа, хүрээнд сонгогдсон загвар алга (validation дуусаагүй эсвэл "
-                       "цуваа дэд багцад ороогүй)")
+        raise ApiError(404, "no_selection", "Энэ бараанд таамаглал гараагүй байна")
     r = conn.execute("SELECT * FROM experiment.run WHERE experiment_id=%s AND phase=%s AND model=%s AND params=%s",
                      (eid, split, sel["model"], jsonb(sel["params"]))).fetchone()
     if not r:
-        raise ApiError(404, "no_run", f"'{split}' хуваалтын таамаглал алга (тест ажиллаагүй байж магадгүй)")
+        raise ApiError(404, "no_run", "Таамаглал алга")
     return r
 
 
@@ -91,7 +90,7 @@ def get_forecast(experiment_id: int, series: int, horizon: int = Query(12), spli
     """FR-F1, FR-F2, FR-04: сарын таамаглал ба хугацааны (сар, улирал, жил) нийлбэр. Хариу нь зорилтын нэр,
     нэгж, эхлэл, run-ийн мэдээллийг үргэлж агуулна."""
     if horizon not in HORIZONS or split not in ("validation", "test", "live"):
-        raise ApiError(422, "invalid_params", "horizon ∈ {1, 3, 12} (сар, улирал, жил), split ∈ {validation, test, live}")
+        raise ApiError(422, "invalid_params", "Хугацаа буруу байна")
     e = _exp(conn, experiment_id)
     s = _series(conn, series)
     assert_branch(user, s["branch_id"])
@@ -103,7 +102,7 @@ def get_forecast(experiment_id: int, series: int, horizon: int = Query(12), spli
         last = last_complete_month(e["date_max"])
         origins = [o for o in origins if add_months(o, horizon) <= last] or origins
     if not origins:
-        raise ApiError(404, "no_forecast", "Энэ цуваанд таамаглал алга")
+        raise ApiError(404, "no_forecast", "Энэ бараанд таамаглал алга")
     origin = origin_date if origin_date in origins else origins[-1]
     fc = conn.execute("SELECT h, target_date, y_hat, q_lo, q_hi FROM forecast.forecast_value WHERE run_id=%s AND "
                       "series_id=%s AND split=%s AND origin_date=%s AND h <= %s ORDER BY h",
@@ -223,6 +222,4 @@ def explain(run_id: int, series: int, conn=Depends(get_conn, scope="function"), 
             "target_windows": windows, "failures": failures, "profile": profile,
             "state_labels": STATE_LABELS,
             "feature_behaviour": {"available": False,
-                                  "note": "Статистик загварт (гулсах дундаж, ETS, SARIMA, Croston) шинжийн хувь нэмэр байхгүй. "
-                                          "ML загвар нэмэгдэхэд «загварын зан төлөв» хэлбэрээр харуулна; "
-                                          "шалтгаант нөлөө гэж тайлбарлахгүй."}}
+                                  "note": ""}}

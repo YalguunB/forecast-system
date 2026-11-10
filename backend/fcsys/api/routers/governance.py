@@ -39,7 +39,7 @@ def create_adjustment(body: AdjustmentIn, conn=Depends(get_conn, scope="function
         "SELECT y_hat FROM forecast.forecast_value WHERE run_id=%s AND series_id=%s AND split='live' AND target_date=%s "
         "ORDER BY origin_date DESC LIMIT 1", (body.run_id, body.series_id, body.target_date)).fetchone()
     if not fv:
-        raise ApiError(404, "no_live_forecast", "Энэ огноонд гаргасан (live) таамаглал алга")
+        raise ApiError(404, "no_live_forecast", "Энэ сард таамаглал алга")
     row = conn.execute(
         "INSERT INTO governance.forecast_adjustment (run_id, series_id, target_date, original_value, adjusted_value, "
         "reason, user_id) VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING *",
@@ -76,9 +76,9 @@ def value_added(experiment_id: int, conn=Depends(get_conn, scope="function"), us
                          "AND status='validated' ORDER BY version_no DESC LIMIT 1", (e["dataset_id"], e["version_no"])).fetchone()
     base = {"n_adjustments": len(adj), "fva_mae": None, "n_pairs": 0}
     if not adj:
-        return {**base, "message": "Залруулга бүртгэгдээгүй"}
+        return {**base, "message": "Засвар хийгээгүй"}
     if not later:
-        return {**base, "message": "Бодит утга агуулсан хожмын хувилбар алга — FVA-г бодит борлуулалт ирсний дараа хэмжинэ"}
+        return {**base, "message": "Бодит борлуулалт ирсний дараа харагдана. Шинэ хувилбар оруулахад тооцно."}
     sids = sorted({a["series_id"] for a in adj})
     later_max = conn.execute("SELECT date_max FROM raw.dataset_version WHERE id=%s", (later["id"],)).fetchone()["date_max"]
     daily = load_daily(conn, later["id"], sids)
@@ -93,7 +93,7 @@ def value_added(experiment_id: int, conn=Depends(get_conn, scope="function"), us
             continue
         pairs.append((abs(a["original_value"] - yv), abs(a["adjusted_value"] - yv)))
     if not pairs:
-        return {**base, "message": "Залруулсан сард ажиглагдсан (бүтэн) бодит утга алга"}
+        return {**base, "message": "Засварласан сарын бодит борлуулалт хараахан алга"}
     l_model = sum(p[0] for p in pairs) / len(pairs)
     l_adj = sum(p[1] for p in pairs) / len(pairs)
     return {"n_adjustments": len(adj), "n_pairs": len(pairs), "mae_model": l_model, "mae_adjusted": l_adj,
@@ -174,7 +174,7 @@ def _job_for_owner(conn, job_id: int, user: dict) -> dict:
     if not j:
         raise not_found("Ажил", job_id)
     if j["created_by"] != user["id"] and "admin" not in user["roles"]:
-        raise ApiError(403, "forbidden", "Зөвхөн ажлын эзэмшигч харна")
+        raise ApiError(403, "forbidden", "Энэ ажлыг харах эрхгүй")
     return j
 
 
@@ -201,7 +201,7 @@ def my_jobs(limit: int = 30, conn=Depends(get_conn, scope="function"), user=Depe
 def cancel_job(job_id: int, conn=Depends(get_conn, scope="function"), user=Depends(current_user)):
     j = _job_for_owner(conn, job_id, user)
     if j["status"] in ("done", "failed", "cancelled"):
-        raise ApiError(409, "job_finished", f"Ажил аль хэдийн '{j['status']}' төлөвтэй")
+        raise ApiError(409, "job_finished", "Ажил дууссан байна")
     conn.execute("UPDATE governance.job SET cancel_requested=true WHERE id=%s OR parent_id=%s", (job_id, job_id))
     conn.execute("UPDATE governance.job SET status='cancelled', finished_at=now() WHERE (id=%s OR parent_id=%s) "
                  "AND status='queued'", (job_id, job_id))
@@ -231,7 +231,7 @@ class UserPatch(BaseModel):
 def _check_roles(roles: list[str]) -> None:
     bad = [r for r in roles if r not in ROLES]
     if bad:
-        raise ApiError(422, "invalid_roles", f"Үл мэдэгдэх үүрэг: {bad}", {"allowed": list(ROLES)})
+        raise ApiError(422, "invalid_roles", "Үүрэг буруу байна", {"allowed": list(ROLES)})
 
 
 @router.get("/users", tags=["admin"])
@@ -251,9 +251,9 @@ def list_branches(conn=Depends(get_conn, scope="function"), user=Depends(require
 def create_user(body: UserIn, conn=Depends(get_conn, scope="function"), user=Depends(require("admin"))):
     _check_roles(body.roles)
     if conn.execute("SELECT 1 FROM governance.app_user WHERE username=%s", (body.username,)).fetchone():
-        raise ApiError(409, "duplicate_username", "Ийм нэвтрэх нэр бүртгэлтэй")
+        raise ApiError(409, "duplicate_username", "Ийм нэвтрэх нэр бүртгэлтэй байна")
     if "manager" in body.roles and not body.branches:
-        raise ApiError(422, "branches_required", "Менежерт дор хаяж нэг салбар оноох шаардлагатай (эсвэл «Бүх салбар»)")
+        raise ApiError(422, "branches_required", "Менежерт салбар оноох шаардлагатай")
     row = conn.execute("INSERT INTO governance.app_user (username, full_name, password_hash, roles, branches) "
                        "VALUES (%s,%s,%s,%s,%s) RETURNING id, username, full_name, roles, branches, is_active",
                        (body.username, body.full_name, hash_password(body.password), body.roles, body.branches)).fetchone()
@@ -271,7 +271,7 @@ def update_user(uid: int, body: UserPatch, conn=Depends(get_conn, scope="functio
     roles_after = body.roles if body.roles is not None else cur["roles"]
     branches_after = body.branches if body.branches is not None else cur["branches"]
     if "manager" in roles_after and not branches_after:   # үүсгэхтэй ижил дүрэм (create_user)
-        raise ApiError(422, "branches_required", "Менежерт дор хаяж нэг салбар оноох шаардлагатай (эсвэл «Бүх салбар»)")
+        raise ApiError(422, "branches_required", "Менежерт салбар оноох шаардлагатай")
     row = conn.execute(
         "UPDATE governance.app_user SET full_name=coalesce(%s, full_name), roles=coalesce(%s, roles), "
         "branches=coalesce(%s, branches), is_active=coalesce(%s, is_active), password_hash=coalesce(%s, password_hash) "
