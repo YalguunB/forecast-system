@@ -27,13 +27,13 @@ export default function Forecast({ params, user }) {
   const [adjDate, setAdjDate] = useState(null);
 
   if (exps.loading) return <Loading />;
-  if (!done.length) return (<><h1>Бүтээгдэхүүний таамаглал</h1><Intro><p>Бэлэн таамаглал алга байна. Менежер «Таамаглал гаргуулах» хэсэгт 3 алхмыг дуусгасны дараа энд гарна.</p></Intro></>);
+  if (!done.length) return (<><h1>Бүтээгдэхүүний таамаглал</h1><Intro><p>Бэлэн таамаглал алга. Менежер 3 алхмыг дуусгасны дараа энд харагдана.</p></Intro></>);
   const f = fc.data;
   const list = (series.data || []).filter((s) => !q || seriesLabel(s).toLowerCase().includes(q.toLowerCase()) || (s.product_category || "").toLowerCase().includes(q.toLowerCase()));
   return (
     <>
       <h1>Бүтээгдэхүүний таамаглал</h1>
-      <p className="muted">Бүтээгдэхүүнээ сонгоод ирэх сар, улирал эсвэл жилийн борлуулалтын таамаглалыг сар бүрээр нь харна.</p>
+      <p className="muted">Бүтээгдэхүүнээ сонгож, сарын, улирлын эсвэл жилийн таамаглалыг харна.</p>
       <div className="row" style={{ marginBottom: "1rem" }}>
         <div className="grow"><label htmlFor="e">Таамаглал</label>
           <select id="e" value={eid} onChange={(e) => go("forecast", { experiment: e.target.value })}>
@@ -70,7 +70,7 @@ export default function Forecast({ params, user }) {
             <span className="fact" title="Мөшгих дугаар (run_id) — техникийн тайланд хэрэгтэй" style={{ opacity: 0.7 }}>№ {f.run_id}</span>
           </div>
           {split === "live" && <Summary f={f} />}
-          {split === "test" && <Intro><p>Систем өнгөрсөн нэг сарын байдлаар таамаглаж, дараа нь бодитоор хэд зарагдсаныг (цэгээр) харьцуулна. Шугам цэгүүдэд ойр байх тусам таамаглал зөв.
+          {split === "test" && <Intro><p>Таамаглалыг бодит борлуулалттай харьцуулна. Шугамууд ойр байх тусам таамаглал зөв.
             {f.period_total.actual !== null && <> Энэ эхлэлээс {PERIOD_LONG[f.horizon]}-ын нийт: таамаглал <b>{fmt(f.period_total.forecast, 0)}</b>, бодит <b>{fmt(f.period_total.actual, 0)}</b> {f.unit}.</>}</p></Intro>}
           {split === "test" && (
             <div className="row" style={{ marginBottom: "0.5rem" }}>
@@ -88,8 +88,8 @@ export default function Forecast({ params, user }) {
             <div className="panel">
               <ForecastChart f={f} />
               {f.interval.available
-                ? <p className="small muted">Цэнхэр зурвас: сар бүрийн 80%-ийн хүрээ <Help k="interval" />. Улирал, жилийн нийлбэрт хүрээг нэмж тооцохгүй.</p>
-                : <p className="small muted">Энэ арга хүрээ (интервал) гаргадаггүй тул зурвас зураагүй.</p>}
+                ? <p className="small muted">Цэнхэр зурвас нь 80%-ийн хүрээ <Help k="interval" />. Улирал, жилийн нийлбэрт оруулахгүй.</p>
+                : <p className="small muted">Энэ арга хүрээ гаргадаггүй.</p>}
               <MonthTable f={f} onAdjust={isManager && split === "live" ? (d) => { setAdjDate(d); document.getElementById("adjust")?.scrollIntoView({ behavior: "smooth", block: "center" }); } : null} />
             </div>
             <div>
@@ -99,14 +99,14 @@ export default function Forecast({ params, user }) {
               {f.adjusted.length > 0 && (
                 <div className="panel small">
                   <h3 style={{ marginTop: 0 }}>Гараар хийсэн засвар</h3>
-                  <p className="muted">Графикт улбар шар ромбоор харагдана. Системийн анхны таамаглал хэзээ ч дарагдахгүй.</p>
+                  <p className="muted">Гараар хийсэн засварыг улбар шар ромбоор харуулна. Анхны таамаглал хадгалагдана.</p>
                   {f.adjusted.map((a) => <div key={a.target_date}>{monthLabel(a.target_date)}: {fmt(a.original_value)} → <b>{fmt(a.adjusted_value)}</b> — {a.reason} ({a.username})</div>)}
                 </div>
               )}
               {canExport && (
                 <div className="panel">
                   <h3 style={{ marginTop: 0 }}>Татаж авах</h3>
-                  <p className="small muted">Бүх бүтээгдэхүүний сар бүрийн таамаглал ба сар, улирал, жилийн нийлбэр нэг файлд. Залруулга тусдаа баганад.</p>
+                  <p className="small muted">Сар бүрийн таамаглал болон нийт дүнг нэг файлаар татна.</p>
                   <div className="row">
                     <button className="quiet" onClick={() => api.download(`/export/forecasts?experiment_id=${eid}&split=${split}&format=xlsx`, `forecast_exp${eid}_${split}.xlsx`)}>Excel татах</button>
                     <button className="quiet" onClick={() => api.download(`/export/forecasts?experiment_id=${eid}&split=${split}&format=csv`, `forecast_exp${eid}_${split}.csv`)}>CSV татах</button>
@@ -244,7 +244,7 @@ function Metrics({ f }) {
   return (
     <div className="panel">
       <h3 style={{ marginTop: 0 }}>Хэр найдвартай вэ?</h3>
-      <p className="small muted">Сүүлийн 12 сард сар бүрээс таамаглаж, бодит борлуулалттай харьцуулсан дүн.</p>
+      <p className="small muted">Сүүлийн 12 сарын таамаглалыг бодит борлуулалттай харьцуулна.</p>
       <ul className="attn">{lines.map(([tone, tag, text]) => (
         <li key={tag}><span className={`badge ${tone}`}>{tag}</span><div className="what"><span style={{ color: "var(--ink)" }}>{text}</span></div></li>))}
       </ul>
@@ -277,7 +277,7 @@ function ValueAdded({ eid }) {
     <div className="panel small">
       <h3 style={{ marginTop: 0 }}>Таны засвар тус болсон уу?</h3>
       {d.fva_mae == null
-        ? <p className="muted" style={{ margin: 0 }}>{d.n_adjustments} засвар хийсэн. Бодит борлуулалт ирж, шинэ файл оруулсны дараа засвар алдааг бууруулсан эсэхийг энд харуулна.</p>
+        ? <p className="muted" style={{ margin: 0 }}>{d.n_adjustments} засвар хийсэн. Шинэ бодит мэдээлэл орсны дараа үр дүнг харуулна.</p>
         : <p style={{ margin: 0 }}><span className={`badge ${d.fva_mae > 0 ? "ok" : "warn"}`}>{d.fva_mae > 0 ? "Тус болсон" : "Тус болоогүй"}</span>{" "}
             Таны {d.n_pairs} засвар сарын алдааг дунджаар <b>{fmt(Math.abs(d.fva_mae), 1)}</b>-ээр {d.fva_mae > 0 ? "бууруулсан" : "нэмэгдүүлсэн"} (системийн алдаа {fmt(d.mae_model, 1)} → засвартай {fmt(d.mae_adjusted, 1)}).</p>}
     </div>
@@ -292,7 +292,7 @@ function Adjust({ f, date, setDate, onSaved }) {
   return (
     <div className="panel" id="adjust">
       <h3 style={{ marginTop: 0 }}>Таамаглалыг гараар засах</h3>
-      <p className="small muted">Урамшуулал, том захиалга зэрэг системд мэдэгдээгүй шалтгаан байвал. Анхны таамаглал устахгүй.</p>
+      <p className="small muted">Системд ороогүй шалтгааныг бичнэ. Анхны таамаглал хадгалагдана.</p>
       <label htmlFor="ad">Сар</label>
       <select id="ad" value={date} onChange={(e) => setDate(e.target.value)}>
         {f.forecast.map((p) => <option key={p.target_date} value={p.target_date}>{monthLabel(p.target_date, true)} — систем {fmt(p.y_hat, 0)}</option>)}
@@ -325,7 +325,7 @@ function Explain({ runId, sid, horizon }) {
     <>
       <h2>Сар бүрийн эхлэлийн алдаа</h2>
       <div className="panel table-wrap">
-        <p className="small muted">Эхлэл бүрээс {PERIOD_LONG[horizon]}-ын таамаглалын алдаа, зорилтот хугацааны өдрийн төлөвтэй. {ex.data.feature_behaviour.note}</p>
+        <p className="small muted">Таамаглалын алдааг өдрийн төлөвтэй харьцуулна. {ex.data.feature_behaviour.note}</p>
         <table>
           <thead><tr><th>Сүүлийн мэдэгдэх сар</th><th className="num">Сарын алдаа, %</th><th className="num">Нийт дүнгийн зөрүү</th><th>Зорилтот хугацааны өдрийн төлөв</th></tr></thead>
           <tbody>{rows.map((r) => (
