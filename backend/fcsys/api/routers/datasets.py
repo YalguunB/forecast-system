@@ -108,6 +108,10 @@ def create_version(
         raise ApiError(422, "missing_required_fields", "Заавал талбар дутуу: " + ", ".join(missing),
                        {"missing": missing, "columns": cols})
     scope = branch_scope(user)
+    if scope is not None and not scope:   # салбар оноогоогүй менежер — scope[0] дээр унахын оронд тайлбарлана
+        path.unlink(missing_ok=True)
+        raise ApiError(403, "no_branches", "Танд хариуцах салбар оноогоогүй байна. Админ «Хэрэглэгч ба эрх» хэсэгт "
+                       "салбар (эсвэл «Бүх салбар») оноосны дараа өгөгдөл оруулах боломжтой.")
     if scope is not None:   # FR-08: менежер зөвхөн өөрийн салбарын өгөгдөл импортлоно
         if fields.get("branch_id"):
             found = set(ingest.read_table(path)[fields["branch_id"]].astype(str).str.strip()) - {""}

@@ -213,3 +213,24 @@ def test_cancel_and_retry_validation(client, users, version):
     e2 = client.get(f"/api/v1/experiments/{eid}", headers=rs).json()
     assert e2["status"] == "validation_done" and e2["protocol_hash"] == e["protocol_hash"]
     assert e2["target_label"] == "Эрэлтийн таамаглал"
+
+
+
+def test_manager_without_branches(client, users, version, synthetic, database):
+    """Салбаргүй менежер: PATCH-ээр хоосон салбар оноох боломжгүй; DB-д ийм болсон ч импорт 500 биш, ойлгомжтой 403."""
+    from fcsys.db import connect
+    h = _h(users["admin"])
+    uid = next(u["id"] for u in client.get("/api/v1/users", headers=h).json() if u["username"] == "manager2")
+    r = client.patch(f"/api/v1/users/{uid}", headers=h, json={"branches": []})
+    assert r.status_code == 422 and r.json()["code"] == "branches_required", r.text
+    with connect(database["app"]) as conn:          # хуучин хувилбараар хадгалагдсан хоосон салбар
+        conn.execute("UPDATE governance.app_user SET branches='{}' WHERE id=%s", (uid,))
+        conn.commit()
+    try:
+        ds = client.post("/api/v1/datasets", headers=_h(users["manager2"]), json={"name": "Салбаргүй"}).json()["id"]
+        r = _upload(client, users["manager2"], ds, synthetic, {k: v for k, v in MAPPING.items() if k != "branch_id"})
+        assert r.status_code == 403 and r.json()["code"] == "no_branches", r.text
+    finally:
+        with connect(database["app"]) as conn:
+            conn.execute("UPDATE governance.app_user SET branches='{*}' WHERE id=%s", (uid,))
+            conn.commit()

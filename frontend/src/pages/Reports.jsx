@@ -96,7 +96,7 @@ export default function Reports({ params }) {
   const filtered = cats.length || branch || products.length || q;
 
   if (exps.loading) return <Loading />;
-  if (!done.length) return (<><h1>Тайлан</h1><p className="muted">Бэлэн таамаглал алга. Менежер «Таамаглал гаргуулах» хэсгийн 3 алхмыг дуусгасны дараа тайлан энд гарна.</p></>);
+  if (!done.length) return (<><h1>Тайлан</h1><p className="muted">Бэлэн таамаглал алга. 3 алхмыг дуусгасны дараа тайлан гарна.</p></>);
   const P = PERIOD[horizon];
 
   return (
@@ -104,7 +104,7 @@ export default function Reports({ params }) {
       <div className="dash-head">
         <div>
           <h1>Тайлан</h1>
-          {r && <p className="muted small">{r.experiment.target_label} · {r.experiment.dataset} v{r.experiment.version_no} · сүүлийн бүтэн сар {monthLabel(r.experiment.last_month, true)} · таамаглал {monthLabel(r.forecast_months[0])}{r.forecast_months.length > 1 ? `–${monthLabel(r.forecast_months.at(-1))}` : ""} · нэгж {r.experiment.unit}</p>}
+          {r && <p className="muted small">{r.experiment.target_label} · {r.experiment.dataset} · {monthLabel(r.experiment.last_month, true)} хүртэл · нэгж: {r.experiment.unit}</p>}
         </div>
         <div className="row no-print">
           <button className="quiet" onClick={() => api.download(`/reports/summary.xlsx?experiment_id=${eid}&horizon=${horizon}`, `report_exp${eid}_${horizon}m.xlsx`)}>Ангилал, бүтээгдэхүүний тайлан (Excel)</button>
@@ -136,7 +136,7 @@ export default function Reports({ params }) {
           </div></div>}
         {filtered ? <button className="quiet" onClick={() => { setCats([]); setBranch(""); setProducts([]); setQ(""); }}>Шүүлтүүр арилгах</button> : null}
       </div>
-      {products.length > 0 && <p className="small">Сонгосон бүтээгдэхүүн: <b>{products.join(", ")}</b> — графикийн баганаас дахин дарж хасна.</p>}
+      {products.length > 0 && <p className="small">Сонгосон: <b>{products.join(", ")}</b>. График дээр дахин дарж хасна.</p>}
 
       <ErrorNote error={rep.error} />
       {rep.loading && !r ? <Loading /> : r && agg && (
@@ -153,7 +153,7 @@ export default function Reports({ params }) {
 
           <div className="tiles">
             <Tile title={`Сарын борлуулалт ба ${P.toLowerCase()}ын таамаглал`} wide
-                  note={`Сонгосон бүтээгдэхүүний сарын нийт. Цэнхэр — таамаглал, саарал тасархай — өмнөх оны ижил сарууд.`}>
+                  note="Цэнхэр — таамаглал. Саарал тасархай — өнгөрсөн оны ижил сар.">
               <Plot data={[
                 { x: r.history_months, y: agg.hist, name: "Бодит борлуулалт", type: "bar", marker: { color: GRAY }, hovertemplate: "%{x|%Y.%m}: %{y:,.0f}<extra>Бодит</extra>" },
                 { x: r.forecast_months, y: agg.fc, name: "Таамаглал", type: "bar", marker: { color: SLOTS[0] }, hovertemplate: "%{x|%Y.%m}: %{y:,.0f}<extra>Таамаглал</extra>" },
@@ -164,7 +164,7 @@ export default function Reports({ params }) {
                 style={{ width: "100%" }} useResizeHandler config={cfg} />
             </Tile>
 
-            <Tile title={`Ангиллаар: ${P.toLowerCase()}ын таамаглал`} note="Саарал — өмнөх оны ижил үе. Баганан дээр дарж ангиллаар шүүнэ.">
+            <Tile title={`Ангиллаар: ${P.toLowerCase()}ын таамаглал`} note="Саарал — өнгөрсөн оны ижил үе. Баганан дээр дарж шүүнэ.">
               <Plot data={[
                 { type: "bar", orientation: "h", name: "Өмнөх оны ижил үе", y: [...agg.byCat].reverse().map((c) => c.key), x: [...agg.byCat].reverse().map((c) => c.ly),
                   marker: { color: GRAY }, hovertemplate: "%{y}: %{x:,.0f}<extra>Өмнөх он</extra>" },
@@ -175,7 +175,7 @@ export default function Reports({ params }) {
                 onClick={(ev) => { const k = ev.points?.[0]?.y; if (k) toggle(cats, setCats, k); }} style={{ width: "100%" }} useResizeHandler config={cfg} />
             </Tile>
 
-            <Tile title="Ангиллын эзлэх хувь" note={`${P}ын таамаглалын нийт дүнд ангилал бүрийн хувь.`}>
+            <Tile title="Ангиллын эзлэх хувь" note="Нийт таамаглалд ангилал бүрийн эзлэх хувь.">
               <Plot data={[{ type: "pie", hole: 0.6, sort: false, direction: "clockwise",
                 labels: agg.byCat.map((c) => c.key), values: agg.byCat.map((c) => c.fc ?? 0),
                 marker: { colors: agg.byCat.map((c) => catColor[c.key]), line: { color: "#fff", width: 2 } },
@@ -186,7 +186,7 @@ export default function Reports({ params }) {
             </Tile>
 
             {horizon > 1 && (
-              <Tile title="Сар бүрийн таамаглал ангиллаар" wide note="Багана бүр нэг сар; өнгө нь ангилал.">
+              <Tile title="Сар бүрийн таамаглал ангиллаар" wide note="Багана бүр нэг сар. Өнгө бүр нэг ангилал.">
                 <Plot data={agg.byCat.map((c) => ({ type: "bar", name: c.key, x: r.forecast_months, y: c.months, marker: { color: catColor[c.key], line: { color: "#fff", width: 1 } },
                   hovertemplate: `${c.key}: %{y:,.0f}<extra></extra>` }))}
                   layout={plotLayout({ height: 320, barmode: "stack", bargap: 0.3, hovermode: "x unified", xaxis: { type: "date", tickformat: "%Y.%m", dtick: "M1", gridcolor: grid },
@@ -195,12 +195,12 @@ export default function Reports({ params }) {
               </Tile>
             )}
 
-            <Tile title={`Бүтээгдэхүүнээр: топ 15 (${P.toLowerCase()})`} wide note="Саарал — өмнөх оны ижил үе. Баганан дээр дарж тухайн бүтээгдэхүүнээр шүүнэ.">
+              <Tile title={`Бүтээгдэхүүнээр: топ 15 (${P.toLowerCase()})`} wide note="Саарал — өнгөрсөн оны ижил үе. Баганан дээр дарж шүүнэ.">
               <TopProducts rows={agg.byProduct} catColor={catColor} onPick={(p) => toggle(products, setProducts, p)} picked={products} />
             </Tile>
 
             {r.season && (
-              <Tile title="Улирлын хэв маяг: он × сар" note="Сарын нийт борлуулалт (бүх бүтээгдэхүүн). Бараан = өндөр. Хоосон нүд — бүтэн биш сар.">
+              <Tile title="Улирлын хэв маяг: он × сар" note="Бараан өнгө — өндөр борлуулалт. Хоосон нүд — дутуу сар.">
                 <Plot data={[{ type: "heatmap", z: r.season.z, x: MONTHS, y: r.season.rows.map(String),
                   colorscale: [[0, "#cde2fb"], [0.5, "#5598e7"], [1, "#184f95"]], xgap: 2, ygap: 2,
                   hovertemplate: "%{y} оны %{x}-р сар: %{z:,.0f}<extra></extra>", colorbar: { thickness: 10 } }]}
@@ -209,7 +209,7 @@ export default function Reports({ params }) {
               </Tile>
             )}
 
-            <Tile title={<>Аргуудын сарын алдаа <Help k="WAPE" /></>} note="Аргыг сонгох шатны дундаж. Бага байх тусам сайн.">
+            <Tile title={<>Аргуудын сарын алдаа <Help k="WAPE" /></>} note="Бага алдаа нь илүү сайн таамаглал гэсэн үг.">
               <MethodBars validation={r.validation} />
             </Tile>
           </div>

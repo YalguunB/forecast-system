@@ -4,6 +4,7 @@ export const STATES = {
   sold: { label: "Борлуулалттай", color: "#3E7D5A", code: "Б", note: "таамаглалд орно" },
   open_no_sale: { label: "Нээлттэй, борлуулалтгүй", color: "#9DB8A6", code: "0", note: "жинхэнэ 0, таамаглалд орно" },
   stockout: { label: "Нөөцгүй", color: "#B5483B", code: "Н", note: "борлуулалт 0 боловч эрэлт байсан байж магадгүй" },
+  sold_out: { label: "Дууссан", color: "#D9822B", code: "Д", note: "өдөртөө бүгд зарагдсан — эрэлт үүнээс их байсан байж магадгүй" },
   closed: { label: "Хаалттай", color: "#6B7780", code: "Х", note: "үнэлгээнээс хасна" },
   missing: { label: "Бүртгэл дутуу", color: "#C9A227", code: "?", note: "үнэлгээнээс хасна" },
   unknown: { label: "Тодорхойгүй", color: "#C8CFD4", code: "~", note: "шалтгаан мэдэгдэхгүй (календарь, нөөцийн файл өгөөгүй)" },

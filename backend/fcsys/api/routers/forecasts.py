@@ -14,7 +14,7 @@ from ..core import ApiError, assert_branch, get_conn, not_found, require, requir
 
 router = APIRouter(tags=["forecasts"])
 
-STATE_LABELS = {"sold": "Борлуулалттай", "open_no_sale": "Нээлттэй, борлуулалтгүй", "stockout": "Нөөцгүй",
+STATE_LABELS = {"sold": "Борлуулалттай", "open_no_sale": "Нээлттэй, борлуулалтгүй", "stockout": "Нөөцгүй", "sold_out": "Дууссан",
                 "closed": "Хаалттай", "missing": "Бүртгэл дутуу", "unknown": "Тодорхойгүй"}
 
 

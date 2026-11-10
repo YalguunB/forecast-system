@@ -24,10 +24,14 @@ export default function Admin() {
 
 function BranchPicker({ value, onChange, branches, id }) {
   const all = value.includes("*");
-  const toggle = (b) => onChange(value.includes(b) ? value.filter((x) => x !== b) : [...value.filter((x) => x !== "*"), b]);
+  // Менежер салбаргүй үлдэхгүй: сүүлийн салбарыг унтраавал «Бүх салбар» руу буцна
+  const toggle = (b) => {
+    const next = value.includes(b) ? value.filter((x) => x !== b) : [...value.filter((x) => x !== "*"), b];
+    onChange(next.length ? next : ["*"]);
+  };
   return (
     <div className="chips" id={id}>
-      <button type="button" className={`chip ${all ? "on" : ""}`} aria-pressed={all} onClick={() => onChange(all ? [] : ["*"])}>Бүх салбар</button>
+      <button type="button" className={`chip ${all ? "on" : ""}`} aria-pressed={all} onClick={() => { if (!all) onChange(["*"]); }}>Бүх салбар</button>
       {branches.map((b) => (
         <button type="button" key={b} className={`chip ${!all && value.includes(b) ? "on" : ""}`} aria-pressed={!all && value.includes(b)}
                 disabled={all} onClick={() => toggle(b)}>{b}</button>

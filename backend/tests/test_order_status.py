@@ -72,3 +72,26 @@ def test_product_launched_later_still_starts_at_first_sale():
                        "branch_ext_id": "ALL", "qty": 1.0, "unit": "ш", "amount": 1.0, "is_return": False})
     daily = grid.build_daily(tx, pd.Timestamp("2020-03-31"))
     assert daily[daily.product_id == "C"]["day"].min() == pd.Timestamp("2020-03-10")
+
+
+def test_demand_month_corrected_for_stockout_and_sold_out_days():
+    """Эрэлт (D): нөөцгүй ба «дууссан» өдрийн оронд нөөцтэй өдрийн дундаж — борлуулалт (S) өөрчлөгдөхгүй."""
+    from fcsys.engine.monthly import build_monthly
+    days = pd.date_range("2024-01-01", "2024-01-31")              # 31 өдөр, өдөрт эрэлт 10
+    sales = [10.0] * 25 + [4.0] + [0.0] * 5                         # 26-нд 4 үлдсэн → дууссан, 27–31 нөөцгүй
+    onhand = [50] * 25 + [4] + [0] * 5
+    tx = pd.DataFrame({"txn_date": [d for d, q in zip(days, sales) if q > 0], "product_ext_id": "A", "branch_ext_id": "B",
+                       "qty": [q for q in sales if q > 0], "unit": "ш", "amount": 1.0, "is_return": False})
+    other = pd.DataFrame({"txn_date": days, "product_ext_id": "Z", "branch_ext_id": "B", "qty": 1.0, "unit": "ш",
+                          "amount": 1.0, "is_return": False})          # салбар өдөр бүр ажилласан (бүртгэл дутуу биш)
+    tx = pd.concat([tx, other], ignore_index=True)
+    inv = pd.DataFrame({"date": days, "product_id": "A", "branch_id": "B", "on_hand": onhand,
+                        "available": [o > 0 for o in onhand]})
+    daily = grid.build_daily(tx, pd.Timestamp("2024-01-31"), inventory=inv)
+    daily = daily[daily.product_id == "A"]
+    assert daily.set_index("day").loc["2024-01-26", "day_state"] == "sold_out"
+    assert (daily.day_state == "stockout").sum() == 5
+    s = build_monthly(daily, "sales", pd.Timestamp("2024-01-31"))
+    d = build_monthly(daily, "demand", pd.Timestamp("2024-01-31"))
+    assert s["y"].iloc[0] == 254.0                                  # бодит борлуулалт
+    assert abs(d["y"].iloc[0] - 310.0) < 1e-9                       # 25 бүтэн өдөр × 10 = 250 → ×31/25 = 310

@@ -10,7 +10,8 @@
   дууссан бол тэр сар цуваанд орохгүй.
 * Салбарт тухайн сард нэг ч гүйлгээ бүртгэгдээгүй (бүх өдөр «бүртгэл дутуу» / «хаалттай») бол
   сарын утга тодорхойгүй (NaN) — 0 гэж үзэхгүй.
-* Эрэлтийн (D) зорилтод нөөцгүй өдөр сарын 20%-иас олон бол сарын эрэлт халхлагдсан тул NaN.
+* Эрэлтийн (D) зорилтод нөөцгүй өдрийн 0-ийг эрэлт гэж үзэхгүй: сарын эрэлт = нөөцтэй өдрийн дундаж
+  борлуулалт × нээлттэй өдөр. Нөөцгүй өдөр нээлттэй өдрийн 50%-иас олон бол мэдээлэл хүрэлцэхгүй тул NaN.
 * Интервалын хязгаарыг нэмж улирал, жилийн интервал гэж үзэхгүй (нийлбэрт зөвхөн цэгэн таамаглал).
 """
 from __future__ import annotations
@@ -22,7 +23,9 @@ HORIZONS = (1, 3, 12)
 PERIODS = {"month": 1, "quarter": 3, "year": 12}
 PERIOD_LABELS = {1: "Сар", 3: "Улирал", 12: "Жил"}
 GAP_STATES = ("missing", "closed")
-CENSOR_SHARE = 0.2
+# Нөөцгүй өдөр нээлттэй өдрийн 50%-иас олон бол сарын эрэлтийг сэргээхгүй (NaN). 20% байхад эрэлт өндөр
+# (нөөц хурдан дуусдаг) сарууд хасагдаж, эрэлтийн таамаглал системтэйгээр доогуур гардаг байв (синтетик шалгалт).
+CENSOR_SHARE = 0.5
 
 
 def month_start(ts) -> pd.Timestamp:
@@ -76,10 +79,11 @@ def build_monthly(daily: pd.DataFrame, target: str, date_max) -> pd.DataFrame:
     state = d["day_state"].values
     qty = d["sales_qty"].astype(float).values
     stock = state == "stockout"
+    soldout = state == "sold_out"
     frame = pd.DataFrame({"m": m.values, "qty": qty, "gap": np.isin(state, GAP_STATES), "stock": stock,
-                          "qty_nostock": np.where(stock, 0.0, qty)})
+                          "soldout": soldout, "qty_full": np.where(stock | soldout, 0.0, qty)})
     g = frame.groupby("m").agg(qty=("qty", "sum"), n_days=("qty", "size"), n_gap=("gap", "sum"),
-                               n_stockout=("stock", "sum"))
+                               n_stockout=("stock", "sum"), n_soldout=("soldout", "sum"), qty_full=("qty_full", "sum"))
     idx = pd.date_range(first, last, freq="MS")
     g = g.reindex(idx)
     g["n_days"] = g["n_days"].fillna(0).astype(int)
@@ -95,9 +99,23 @@ def build_monthly(daily: pd.DataFrame, target: str, date_max) -> pd.DataFrame:
     y[no_records] = np.nan
     reason[no_records] = "сард гүйлгээ бүртгэгдээгүй"
     if target == "demand":
-        cens = (~incomplete) & (~no_records) & (g["n_stockout"].values > CENSOR_SHARE * dim)
+        # Нөөцгүй өдрийн 0 нь эрэлт биш (халхлагдсан). Сарын эрэлт = нөөцтэй өдрийн дундаж борлуулалт ×
+        # нээлттэй өдрийн тоо (in-stock rate засвар). Нөөцгүй өдөр хэт олон бол мэдээлэл хүрэлцэхгүй → NaN.
+        # «Дууссан» өдөр (өдөртөө бүгд зарагдсан) ч мөн халхлагдсан: борлуулалт нь эрэлтийн доод хязгаар.
+        open_days = g["n_days"].values - g["n_gap"].values
+        n_cens = g["n_stockout"].values + g["n_soldout"].fillna(0).values
+        avail = open_days - n_cens
+        ok = (~incomplete) & (~no_records)
+        cens = ok & (g["n_stockout"].values > CENSOR_SHARE * open_days)
         y[cens] = np.nan
         reason[cens] = f"нөөцгүй өдөр {int(CENSOR_SHARE * 100)}%-иас олон (эрэлт халхлагдсан)"
+        adj = ok & ~cens & (n_cens > 0) & (avail > 0)
+        full = g["qty_full"].fillna(0).values
+        # халхлагдаагүй өдрийн дундаж × нээлттэй өдөр; дууссан өдрийн бодит борлуулалтаас бага гарахгүй
+        y[adj] = np.maximum(full[adj] / avail[adj] * open_days[adj], y[adj])
+        no_full = ok & ~cens & (n_cens > 0) & (avail <= 0)
+        y[no_full] = np.nan
+        reason[no_full] = "нөөц тасарсангүй өдөр байхгүй (эрэлт тодорхойгүй)"
     out = pd.DataFrame({"y": y, "n_days": g["n_days"].values, "n_gap": g["n_gap"].values,
                         "n_stockout": g["n_stockout"].values, "reason": reason}, index=idx)
     out.index.name = "month"
