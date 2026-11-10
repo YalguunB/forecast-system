@@ -63,9 +63,19 @@ def build_daily(tx: pd.DataFrame, date_max: pd.Timestamp,
     if inventory is not None and len(inventory):
         inv = inventory.set_index(["product_id", "branch_id", "date"])
 
+    # Салбарын бүртгэл эхэлсэн өдөр. Бүтээгдэхүүн бүртгэлийн эхний сард зарагдсан бол түүх нь бүртгэлийн
+    # эхнээс эхэлнэ: эхний борлуулалт 1-нд биш 3-нд болсон нь тэр сарыг «дутуу» болгох шалтгаан биш
+    # (өмнө нь эхний сар хасагдаж, 48 сарын шаардлагад хүрэхгүй бараа туршилтаас унадаг байв).
+    # Хожим гарсан бүтээгдэхүүний түүх анхны борлуулалтаас эхэлсэн хэвээр (зохиомол 0 нэмэхгүй).
+    branch_first = t.groupby("branch_ext_id")["txn_date"].min()
+
     frames = []
     for (pid, bid), g in agg.groupby(["product_ext_id", "branch_ext_id"], sort=True):
-        days = pd.date_range(g["txn_date"].min(), date_max, freq="D")
+        start = g["txn_date"].min()
+        b0 = branch_first.get(bid)
+        if b0 is not None and b0 < start and b0.to_period("M") == start.to_period("M"):
+            start = b0
+        days = pd.date_range(start, date_max, freq="D")
         f = pd.DataFrame({"day": days})
         f = f.merge(g.rename(columns={"txn_date": "day"})[["day", "sold", "ret", "amt"]],
                     on="day", how="left")

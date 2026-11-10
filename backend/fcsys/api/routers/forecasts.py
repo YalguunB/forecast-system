@@ -55,7 +55,7 @@ def _run_for(conn, eid: int, sid: int, horizon: int, split: str, run_id: int | N
 
 
 @router.get("/forecasts/series")
-def experiment_series(experiment_id: int, conn=Depends(get_conn), user=Depends(require("forecast_view"))):
+def experiment_series(experiment_id: int, conn=Depends(get_conn, scope="function"), user=Depends(require("forecast_view"))):
     rows = conn.execute(
         "SELECT i.series_id, s.product_id, s.product_name, s.branch_id, s.unit, p.class, p.zero_share FROM experiment.series_sample_item i "
         "JOIN experiment.series_sample ss ON ss.id=i.sample_id JOIN curated.series s ON s.id=i.series_id "
@@ -87,7 +87,7 @@ def _month_rows(table, start=None, end=None, after=None):
 @router.get("/forecasts")
 def get_forecast(experiment_id: int, series: int, horizon: int = Query(12), split: str = Query("live"),
                  run_id: int | None = None, origin_date: dt.date | None = None, history_months: int = Query(36, le=240),
-                 conn=Depends(get_conn), user=Depends(require("forecast_view"))):
+                 conn=Depends(get_conn, scope="function"), user=Depends(require("forecast_view"))):
     """FR-F1, FR-F2, FR-04: сарын таамаглал ба хугацааны (сар, улирал, жил) нийлбэр. Хариу нь зорилтын нэр,
     нэгж, эхлэл, run-ийн мэдээллийг үргэлж агуулна."""
     if horizon not in HORIZONS or split not in ("validation", "test", "live"):
@@ -154,7 +154,7 @@ def get_forecast(experiment_id: int, series: int, horizon: int = Query(12), spli
 
 @router.get("/forecasts/compare")
 def compare(experiment_id: int, series: int, split: str = "validation", origin_date: dt.date | None = None,
-            conn=Depends(get_conn), user=Depends(require("forecast_view"))):
+            conn=Depends(get_conn, scope="function"), user=Depends(require("forecast_view"))):
     """FR-F4: загваруудыг ижил эхлэл дээр харьцуулна."""
     e = _exp(conn, experiment_id)
     s = _series(conn, series)
@@ -194,7 +194,7 @@ def compare(experiment_id: int, series: int, split: str = "validation", origin_d
 
 
 @router.get("/forecasts/{run_id}/explain")
-def explain(run_id: int, series: int, conn=Depends(get_conn), user=Depends(require("forecast_view"))):
+def explain(run_id: int, series: int, conn=Depends(get_conn, scope="function"), user=Depends(require("forecast_view"))):
     """FR-F3: алдааг өдрийн төлөвтэй холбож тайлбарлана. Шинжийн хувь нэмрийг «загварын зан төлөв»
     гэж л нэрлэнэ — шалтгаант нөлөө биш."""
     run = conn.execute("SELECT r.*, e.target, e.dataset_version_id FROM experiment.run r JOIN experiment.experiment e "

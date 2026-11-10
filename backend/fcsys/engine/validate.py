@@ -1,4 +1,4 @@
-"""validate — өгөгдлийн чанарын дүрэм DQ-01–DQ-10 (Хүснэгт 3.9, FR-D4–D6, D10).
+"""validate — өгөгдлийн чанарын дүрэм DQ-01–DQ-11 (Хүснэгт 3.9, FR-D4–D6, D10).
 
 Дүрэм бүр асуудлын жагсаалт буцаана; мөрийг устгахгүй, утгыг дарж бичихгүй.
 «Блоклох» асуудал нээлттэй байхад хувилбар таамаглалд ашиглагдахгүй.
@@ -84,6 +84,19 @@ def validate_transactions(tx: pd.DataFrame, today: dt.date, unit_conversions: li
                                     f"{QUARANTINE_BLOCK_SHARE:.0%}-аас их тул хувилбарыг блоклов"))
 
     ok = tx[~tx["source_row"].isin(res.quarantined_rows)]
+    # DQ-11 — цуцлагдсан захиалга → борлуулалтад тооцохгүй (анхны мөр хадгалагдана), мэдээлэл
+    if "is_cancelled" in ok and ok["is_cancelled"].any():
+        canc = ok[ok["is_cancelled"]]
+        from .ingest import RETURN_STATUSES
+        st = canc["order_status"].astype(str).str.strip().str.lower() if "order_status" in canc else None
+        for (pid, bid), g in canc.groupby(["product_ext_id", "branch_ext_id"]):
+            n_ret = int(st.loc[g.index].isin(RETURN_STATUSES).sum()) if st is not None else 0
+            n_can = len(g) - n_ret
+            what = ", ".join(x for x in (f"{n_can} цуцлагдсан" if n_can else "", f"{n_ret} буцаагдсан" if n_ret else "") if x)
+            res.issues.append(Issue("DQ-11", "info",
+                                    f"{what} захиалга — борлуулалтад тооцоогүй (анхны мөр хадгалагдсан)",
+                                    pid, bid, original_value=str(len(g))))
+        ok = ok[~ok["is_cancelled"]]
 
     # DQ-03 — давхардсан мөр → автоматаар нэгтгэхгүй, жагсаана
     key = ["txn_date", "product_ext_id", "branch_ext_id"]

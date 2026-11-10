@@ -29,7 +29,7 @@ class AdjustmentIn(BaseModel):
 
 
 @router.post("/adjustments", status_code=201, tags=["governance"])
-def create_adjustment(body: AdjustmentIn, conn=Depends(get_conn), user=Depends(require("adjust"))):
+def create_adjustment(body: AdjustmentIn, conn=Depends(get_conn, scope="function"), user=Depends(require("adjust"))):
     """original_value-г сервер өөрөө forecast_value-аас бичнэ; forecast_value өөрчлөгдөхгүй."""
     s = conn.execute("SELECT branch_id FROM curated.series WHERE id=%s", (body.series_id,)).fetchone()
     if not s:
@@ -51,7 +51,7 @@ def create_adjustment(body: AdjustmentIn, conn=Depends(get_conn), user=Depends(r
 
 
 @router.get("/adjustments", tags=["governance"])
-def list_adjustments(run_id: int | None = None, series_id: int | None = None, conn=Depends(get_conn),
+def list_adjustments(run_id: int | None = None, series_id: int | None = None, conn=Depends(get_conn, scope="function"),
                      user=Depends(require("forecast_view"))):
     q = ("SELECT a.*, u.username FROM governance.forecast_adjustment a JOIN governance.app_user u ON u.id=a.user_id "
          "WHERE (%s::bigint IS NULL OR a.run_id=%s) AND (%s::bigint IS NULL OR a.series_id=%s) ORDER BY a.created_at DESC "
@@ -60,7 +60,7 @@ def list_adjustments(run_id: int | None = None, series_id: int | None = None, co
 
 
 @router.get("/adjustments/value-added", tags=["governance"])
-def value_added(experiment_id: int, conn=Depends(get_conn), user=Depends(require("adjust"))):
+def value_added(experiment_id: int, conn=Depends(get_conn, scope="function"), user=Depends(require("adjust"))):
     """FVA = L_model − L_adjusted (MAE), бодит утга нь ижил өгөгдлийн багцын хожмын хувилбараас.
     Эерэг FVA = залруулга алдааг бууруулсан."""
     e = conn.execute("SELECT e.*, v.dataset_id, v.version_no FROM experiment.experiment e JOIN raw.dataset_version v "
@@ -103,7 +103,7 @@ def value_added(experiment_id: int, conn=Depends(get_conn), user=Depends(require
 # ---------------- Экспорт (FR-X1) ----------------
 @router.get("/export/forecasts", tags=["export"])
 def export_forecasts(experiment_id: int, split: str = "live", format: str = Query("csv", pattern="^(csv|xlsx)$"),
-                     conn=Depends(get_conn), user=Depends(require("export"))):
+                     conn=Depends(get_conn, scope="function"), user=Depends(require("export"))):
     e = conn.execute("SELECT e.*, v.version_no, v.sha256, d.name AS dataset FROM experiment.experiment e "
                      "JOIN raw.dataset_version v ON v.id=e.dataset_version_id JOIN raw.dataset d ON d.id=v.dataset_id "
                      "WHERE e.id=%s", (experiment_id,)).fetchone()
@@ -179,7 +179,7 @@ def _job_for_owner(conn, job_id: int, user: dict) -> dict:
 
 
 @router.get("/jobs/{job_id}", tags=["jobs"])
-def get_job(job_id: int, conn=Depends(get_conn), user=Depends(current_user)):
+def get_job(job_id: int, conn=Depends(get_conn, scope="function"), user=Depends(current_user)):
     j = _job_for_owner(conn, job_id, user)
     kids = conn.execute("SELECT status, count(*) AS n FROM governance.job WHERE parent_id=%s AND type='forecast_batch' "
                         "GROUP BY status", (job_id,)).fetchall()
@@ -192,13 +192,13 @@ def get_job(job_id: int, conn=Depends(get_conn), user=Depends(current_user)):
 
 
 @router.get("/jobs", tags=["jobs"])
-def my_jobs(limit: int = 30, conn=Depends(get_conn), user=Depends(current_user)):
+def my_jobs(limit: int = 30, conn=Depends(get_conn, scope="function"), user=Depends(current_user)):
     return conn.execute("SELECT id, type, status, progress, error, payload, created_at, finished_at FROM governance.job "
                         "WHERE parent_id IS NULL AND created_by=%s ORDER BY id DESC LIMIT %s", (user["id"], limit)).fetchall()
 
 
 @router.post("/jobs/{job_id}/cancel", tags=["jobs"])
-def cancel_job(job_id: int, conn=Depends(get_conn), user=Depends(current_user)):
+def cancel_job(job_id: int, conn=Depends(get_conn, scope="function"), user=Depends(current_user)):
     j = _job_for_owner(conn, job_id, user)
     if j["status"] in ("done", "failed", "cancelled"):
         raise ApiError(409, "job_finished", f"Ажил аль хэдийн '{j['status']}' төлөвтэй")
@@ -235,20 +235,20 @@ def _check_roles(roles: list[str]) -> None:
 
 
 @router.get("/users", tags=["admin"])
-def list_users(conn=Depends(get_conn), user=Depends(require("admin"))):
+def list_users(conn=Depends(get_conn, scope="function"), user=Depends(require("admin"))):
     return conn.execute("SELECT id, username, full_name, roles, branches, is_active, created_at FROM governance.app_user "
                         "ORDER BY id").fetchall()
 
 
 @router.get("/branches", tags=["admin"])
-def list_branches(conn=Depends(get_conn), user=Depends(require("series_view"))):
+def list_branches(conn=Depends(get_conn, scope="function"), user=Depends(require("series_view"))):
     """Өгөгдөлд байгаа салбарын код (админ менежерт оноох, удирдлага шүүх)."""
     return [r["branch_id"] for r in conn.execute(
         "SELECT DISTINCT branch_id FROM curated.series ORDER BY 1").fetchall()]
 
 
 @router.post("/users", status_code=201, tags=["admin"])
-def create_user(body: UserIn, conn=Depends(get_conn), user=Depends(require("admin"))):
+def create_user(body: UserIn, conn=Depends(get_conn, scope="function"), user=Depends(require("admin"))):
     _check_roles(body.roles)
     if conn.execute("SELECT 1 FROM governance.app_user WHERE username=%s", (body.username,)).fetchone():
         raise ApiError(409, "duplicate_username", "Ийм нэвтрэх нэр бүртгэлтэй")
@@ -262,7 +262,7 @@ def create_user(body: UserIn, conn=Depends(get_conn), user=Depends(require("admi
 
 
 @router.patch("/users/{uid}", tags=["admin"])
-def update_user(uid: int, body: UserPatch, conn=Depends(get_conn), user=Depends(require("admin"))):
+def update_user(uid: int, body: UserPatch, conn=Depends(get_conn, scope="function"), user=Depends(require("admin"))):
     if body.roles is not None:
         _check_roles(body.roles)
     row = conn.execute(
@@ -280,7 +280,7 @@ def update_user(uid: int, body: UserPatch, conn=Depends(get_conn), user=Depends(
 
 
 @router.get("/audit", tags=["admin"])
-def audit_log(limit: int = Query(200, le=2000), object_type: str | None = None, conn=Depends(get_conn),
+def audit_log(limit: int = Query(200, le=2000), object_type: str | None = None, conn=Depends(get_conn, scope="function"),
               user=Depends(require("admin"))):
     return conn.execute("SELECT a.*, u.username FROM governance.audit_log a LEFT JOIN governance.app_user u "
                         "ON u.id=a.user_id WHERE (%s::text IS NULL OR a.object_type=%s) ORDER BY a.id DESC LIMIT %s",
@@ -288,7 +288,7 @@ def audit_log(limit: int = Query(200, le=2000), object_type: str | None = None, 
 
 
 @router.post("/dataset-versions/{vid}/archive", tags=["admin"])
-def archive_version(vid: int, conn=Depends(get_conn), user=Depends(require("admin"))):
+def archive_version(vid: int, conn=Depends(get_conn, scope="function"), user=Depends(require("admin"))):
     row = conn.execute("UPDATE raw.dataset_version SET archived_at=coalesce(archived_at, now()) WHERE id=%s RETURNING id",
                        (vid,)).fetchone()
     if not row:

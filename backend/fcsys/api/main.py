@@ -55,7 +55,7 @@ async def integrity_error(_: Request, exc: psycopg.errors.IntegrityError):
 
 
 @app.post("/api/v1/auth/token", tags=["auth"])
-def login(form: OAuth2PasswordRequestForm = Depends(), conn=Depends(get_conn)):
+def login(form: OAuth2PasswordRequestForm = Depends(), conn=Depends(get_conn, scope="function")):
     user = conn.execute("SELECT * FROM governance.app_user WHERE username=%s", (form.username,)).fetchone()
     if not user or not user["is_active"] or not verify_password(form.password, user["password_hash"]):
         raise ApiError(401, "invalid_credentials", "Нэвтрэх нэр эсвэл нууц үг буруу")
@@ -71,7 +71,7 @@ def me(user=Depends(current_user)):
 
 
 @app.get("/api/v1/health", tags=["auth"])
-def health(conn=Depends(get_conn)):
+def health(conn=Depends(get_conn, scope="function")):
     conn.execute("SELECT 1")
     return {"status": "ok", "version": __version__}
 

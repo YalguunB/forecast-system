@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api } from "../api.js";
 import { go } from "../App.jsx";
 import { ErrorNote, Help, Intro, JobProgress, Loading, useLoad } from "../components.jsx";
-import { accuracyLevel, seriesLabel, EXP_STEPS, HORIZONS, MODEL_LABELS, monthLabel, pct } from "../labels.js";
+import { accuracyLevel, plainExclude, runName, seriesLabel, EXP_STEPS, HORIZONS, MODEL_LABELS, monthLabel, pct } from "../labels.js";
 
 export default function Experiments({ params }) {
   return params.id ? <Detail id={params.id} /> : <List />;
@@ -36,7 +36,8 @@ function List() {
 
   return (
     <>
-      <h1>Таамаглах</h1>
+      <h1>Таамаглал гаргуулах</h1>
+      <p className="muted">Систем хэд хэдэн аргыг таны өнгөрсөн борлуулалт дээр шалгаж, хамгийн сайныг нь өөрөө сонгоно. Танаас 3 товч дарах л шаардлагатай.</p>
       <div className="split">
         <div className="panel table-wrap">
           {exps.loading ? <Loading /> : exps.data?.length ? (
@@ -60,13 +61,19 @@ function List() {
           <select id="v" value={form.version} onChange={(e) => setForm({ ...form, version: e.target.value })}>
             {usable.map((v) => <option key={v.id} value={v.id}>{v.dataset} v{v.version_no} ({v.date_min} – {v.date_max})</option>)}
           </select>
-          {info && P && (
-            <p className={`small ${info.full_months < 18 ? "notice bad" : "muted"}`} style={{ margin: "0.4rem 0 0" }}>
-              {info.full_months} бүтэн сар ({monthLabel(info.first_full_month)}–{monthLabel(info.last_full_month)}). Хуваалт: сургалт ≥ {P.train_min_months},
-              {" "}арга сонгох {P.val_months}, эцсийн шалгалт {P.test_months} сар.
+          {info && P && info.full_months >= (info.min_months || 18) && (
+            <p className="small muted" style={{ margin: "0.4rem 0 0" }}>
+              {info.full_months} бүтэн сарын өгөгдөл ({monthLabel(info.first_full_month)}–{monthLabel(info.last_full_month)}). Аргууд эхний саруудаас сурч,
+              {" "}дараагийн {P.val_months} сард дадлага шалгалт, сүүлийн {P.test_months} сард эцсийн шалгалт өгнө.
               {!info.year_horizon_testable && " Шалгах хугацаа 12 сараас богино тул жилийн таамаглалын алдааг хэмжих боломжгүй (таамаглал гарна)."}
-              {info.full_months < 18 && " Өгөгдөл хэт богино — дор хаяж 18 бүтэн сар шаардлагатай."}
             </p>)}
+          {info && info.full_months < (info.min_months || 18) && (
+            <div className="notice bad small" role="alert"><b>Энэ файлаар таамаглал гаргах боломжгүй.</b> Таамаглалд дор хаяж {info.min_months || 18} бүтэн сарын
+              борлуулалт хэрэгтэй, харин энэ файлд {info.full_months} сар л байна. Илүү урт хугацааны файл оруулна уу.</div>)}
+          {info && info.full_months >= (info.min_months || 18) && info.sales_month_share != null && info.sales_month_share < 0.5 && (
+            <div className="notice warn small" role="alert"><b>Өгөгдөл сийрэг байна.</b> Ихэнх бараа саруудын зөвхөн {Math.round(info.sales_month_share * 100)}%-д л
+              зарагдсан тул бараа бүрийн таамаглал найдвартай биш байх магадлалтай. Илүү найдвартай болгох бол өгөгдөл оруулахдаа «Бүтээгдэхүүний код»-д
+              ангиллын баганыг сонгож, ангиллаар нь таамаглуулна уу.</div>)}
           <label htmlFor="t" style={{ marginTop: 8 }}>Юуг таамаглах <Help k="sales_vs_demand" /></label>
           <select id="t" value={form.target} onChange={(e) => setForm({ ...form, target: e.target.value })}>
             <option value="sales">Борлуулалт (ихэнх тохиолдолд үүнийг сонгоно)</option>
@@ -83,7 +90,7 @@ function List() {
               </select></div>
           </div>
           <fieldset style={{ border: 0, padding: 0, marginTop: 8 }}>
-            <legend className="small muted">Турших аргууд («Гулсах дундаж» нь харьцуулах суурь тул заавал)</legend>
+            <legend className="small muted">Турших аргууд («Сүүлийн 3 сарын дундаж» нь харьцуулах суурь тул заавал)</legend>
             {[...new Set((P?.models || []).map((m) => m.name))].map((m) => (
               <label key={m} style={{ display: "inline-flex", gap: 6, marginRight: 12 }}>
                 <input type="checkbox" checked={models.includes(m)} disabled={m === P?.baseline.name}
@@ -103,7 +110,7 @@ function List() {
             </>
           )}
           </details>
-          <button style={{ marginTop: 12 }} disabled={!form.name || !usable.length || !defaults.data} onClick={create}>Үүсгэх</button>
+          <button style={{ marginTop: 12 }} disabled={!form.name || !usable.length || !defaults.data || (info && info.full_months < (info.min_months || 18))} onClick={create}>Үүсгэх</button>
           {!usable.length && <p className="small muted">Ашиглах боломжтой өгөгдөл алга — эхлээд өгөгдөл оруулж, чанарын алдааг засна.</p>}
           <ErrorNote error={err} />
         </div>
@@ -140,31 +147,32 @@ function Detail({ id }) {
       <div className="panel">
         {e.status === "draft" && (
           <>
-            <h3 style={{ marginTop: 0 }}>Алхам 1/3: Загваруудыг турших</h3>
-            <p>Систем таны өгөгдлийн өмнөх хэсэг дээр бүх аргыг туршиж, хамгийн бага алдаатайг сонгоно. Эхэлсний дараа тохиргоо өөрчлөгдөхгүй.</p>
+            <h3 style={{ marginTop: 0 }}>Алхам 1/3: Дадлага шалгалт</h3>
+            <p>Систем таны өмнөх борлуулалт дээр бүх аргыг туршиж, хамгийн бага алддагийг сонгоно. Хэдэн минут үргэлжилж магадгүй; хуудсаа хаасан ч үргэлжилнэ. Эхэлсний дараа тохиргоо өөрчлөгдөхгүй.</p>
             <button onClick={() => act(async () => setJob((await api.post(`/experiments/${id}/validate`)).job_id))}>Аргуудыг турших</button>
           </>
         )}
         {e.status === "validating" && !activeJob && (
           <>
-            <h3 style={{ marginTop: 0 }}>Алхам 1/3: Загваруудыг турших</h3>
+            <h3 style={{ marginTop: 0 }}>Алхам 1/3: Дадлага шалгалт</h3>
             <p>Өмнөх оролдлого дуусаагүй. Ижил тохиргоогоор дахин эхлүүлж болно.</p>
             <button onClick={() => act(async () => setJob((await api.post(`/experiments/${id}/validate`)).job_id))}>Дахин турших</button>
           </>
         )}
-        {e.status === "validating" && activeJob && <p style={{ margin: 0 }}>Систем загваруудыг туршиж байна.</p>}
+        {e.status === "validating" && activeJob && <p style={{ margin: 0 }}>Систем аргуудыг туршиж байна. Хуудсаа хаасан ч үргэлжилнэ.</p>}
         {e.status === "validation_done" && (
           <>
-            <h3 style={{ marginTop: 0 }}>Алхам 2/3: Сонголтыг түгжих <Help k="lock" /></h3>
-            <p>Систем доорх аргыг сонгосон. Шалгаад түгжинэ үү — түгжсэний дараа өөрчлөхгүй.</p>
-            <button className="warn" onClick={() => act(() => api.post(`/experiments/${id}/lock`))}>Сонголтыг түгжих</button>
+            <h3 style={{ marginTop: 0 }}>Алхам 2/3: Сонголтыг баталгаажуулах <Help k="lock" /></h3>
+            <p>Систем бараа бүрт тохирох аргыг доор сонгосон. Харж байгаад баталгаажуулна уу.</p>
+            <p className="why"><b>Яагаад дараа нь өөрчилж болохгүй вэ?</b> Эцсийн шалгалтын дүнг харсны дараа аргаа солих нь шалгалтын хариуг харчихаад хариулахтай адил — дүн бодитоос сайн харагдана. Өөр арга турших бол шинэ таамаглал эхлүүлнэ.</p>
+            <button className="warn" onClick={() => act(() => api.post(`/experiments/${id}/lock`))}>Сонголтыг баталгаажуулах</button>
           </>
         )}
         {e.status === "locked" && !e.test_job_id && (
           <>
             <h3 style={{ marginTop: 0 }}>Алхам 3/3: Эцсийн шалгалт <Help k="test" /></h3>
-            <p>Сонгосон аргыг сонголтод ашиглаагүй сүүлийн саруудад нэг удаа шалгаж, ирэх 12 сарын таамаглалыг гаргана.</p>
-            <button className="warn" onClick={() => act(async () => setJob((await api.post(`/experiments/${id}/test`)).job_id))}>Эцсийн шалгалт хийх</button>
+            <p>Сонгосон аргыг урьд нь хараагүй сүүлийн саруудад нэг удаа шалгаж («бодит амьдрал дээр хэр сайн бэ?»), дараа нь ирэх 12 сарын таамаглалыг гаргана.</p>
+            <button className="warn" onClick={() => act(async () => setJob((await api.post(`/experiments/${id}/test`)).job_id))}>Эцсийн шалгалт эхлүүлэх</button>
           </>
         )}
         {e.status === "locked" && e.test_job_id && activeJob && <p style={{ margin: 0 }}>Эцсийн шалгалт ба таамаглал гарч байна…</p>}
@@ -199,85 +207,115 @@ function Detail({ id }) {
   );
 }
 
+const monthsBetween = (a, b) => {
+  const [y1, m1] = String(a).split("-").map(Number), [y2, m2] = String(b).split("-").map(Number);
+  return (y2 - y1) * 12 + (m2 - m1) + 1;
+};
+
 function Results({ id, status }) {
   const rep = useLoad(() => api.get(`/experiments/${id}/report`), [id, status]);
+  const [hz, setHz] = useState(1);
   const r = rep.data;
   if (!r) return rep.loading ? <Loading /> : <ErrorNote error={rep.error} />;
-  const plain = (lbl) => {
-    const [m, ...rest] = String(lbl).split(" ");
-    return (MODEL_LABELS[m] || m) + (m === "ets" && rest.join(" ").includes("trend") ? " + тренд" : "");
-  };
   const models = [...new Set(r.validation.map((v) => v.model))];
-  const hz = HORIZONS.map(([h]) => h);
-  const best = Object.fromEntries(hz.map((h) => {
+  const hs = HORIZONS.map(([h]) => h);
+  const best = Object.fromEntries(hs.map((h) => {
     const rows = r.validation.filter((v) => v.horizon === h && v.mean !== null);
     return [h, rows.length ? rows.reduce((a, b) => (a.mean <= b.mean ? a : b)).model : null];
   }));
   const range = (a) => `${monthLabel(a[0], true)} – ${monthLabel(a[1], true)}`;
+  const sp = r.splits;
+  const nTr = monthsBetween(sp.train_start_min, sp.validation[0]) - 1, nVa = monthsBetween(...sp.validation), nTe = monthsBetween(...sp.test);
+  const excl = {};
+  for (const x of r.sample.excluded) { const k = plainExclude(x.exclude_reason).replace(/: \d+ сар/, ""); (excl[k] ||= []).push(x); }
+  const sel = r.selection[hz];
+  const nSel = sel ? Object.values(sel.counts).reduce((a, n) => a + n, 0) : 0;
   return (
     <>
-      <h2>Ашигласан өгөгдөл</h2>
-      <div className="panel small">
-        <p style={{ margin: 0 }}>{r.data.dataset} (хувилбар {r.data.version_no}), {r.sample.included} бүтээгдэхүүн, сарын түвшинд (сүүлийн бүтэн сар {monthLabel(r.splits.last_complete_month, true)}).
-          {" "}Аргуудыг <b>{range(r.splits.validation)}</b> хугацаанд туршиж сонгосон, эцсийн шалгалтыг
-          {" "}<b>{range(r.splits.test)}</b> хугацаанд хийсэн (энэ хугацааны өгөгдлийг сонголтод ашиглаагүй).</p>
-        {r.sample.excluded.length > 0 && <p className="muted" style={{ marginBottom: 0 }}>{r.sample.excluded.length} бүтээгдэхүүн хасагдсан (доорх «Анхааруулга»-г үзнэ үү).</p>}
+      <h2>Сурагчийн шалгалттай адил</h2>
+      <div className="panel">
+        <p className="small" style={{ marginTop: 0 }}>{r.data.dataset} (хувилбар {r.data.version_no}) · {r.sample.included} бараа · сүүлийн бүтэн сар {monthLabel(sp.last_complete_month, true)}</p>
+        <div className="split-bar" role="img" aria-label={`Сурах ${nTr}+ сар, дадлага шалгалт ${nVa} сар, эцсийн шалгалт ${nTe} сар`}>
+          <div className="tr" style={{ flex: Math.max(nTr, 6) }}>Сурах · {nTr}+ сар</div>
+          <div className="va" style={{ flex: nVa }}>Дадлага · {nVa} сар</div>
+          <div className="te" style={{ flex: nTe }}>Эцсийн шалгалт · {nTe} сар</div>
+        </div>
+        <div className="three">
+          <p><b>1. Сурах.</b> Аргууд хуучин борлуулалтаас хэв маягийг сурна — аль сард их зарагддаг, өсөж байна уу гэх мэт.</p>
+          <p><b>2. Дадлага шалгалт</b> ({range(sp.validation)}). Аргуудаар таамаглуулж бодит борлуулалттай харьцуулна. Хамгийн бага алдсан нь сонгогдоно.</p>
+          <p><b>3. Эцсийн шалгалт</b> ({range(sp.test)}). Сонгосон аргыг урьд нь хараагүй саруудад нэг удаа шалгана.</p>
+        </div>
       </div>
 
-      <h2>Аргуудын харьцуулалт <Help k="WAPE" /></h2>
-      <div className="panel table-wrap">
-        <p className="small muted" style={{ marginTop: 0 }}>Сарын алдаа (WAPE) — бага байх тусам сайн. Хугацаа бүрийн хамгийн сайн нь тодоор.</p>
-        <table>
-          <thead><tr><th>Арга</th>{HORIZONS.map(([h, l]) => <th key={h} className="num">{l}</th>)}</tr></thead>
-          <tbody>{models.map((m) => {
-            const rows = r.validation.filter((v) => v.model === m);
-            return <tr key={m}><td>{plain(m)}</td>{hz.map((h) => {
-              const v = rows.find((x) => x.horizon === h)?.mean;
-              return <td key={h} className="num" style={best[h] === m ? { fontWeight: 700 } : null}>{pct(v)}</td>;
-            })}</tr>;
-          })}</tbody>
-        </table>
-      </div>
-
-      <h2>Систем ямар аргыг сонгосон бэ</h2>
-      <div className="panel small">
-        {Object.entries(r.selection).map(([h, s]) => (
-          <p key={h} style={{ margin: "0.2rem 0" }}><b>{Object.fromEntries(HORIZONS)[h]}ын</b> таамаглалд: {Object.entries(s.counts).map(([m, n]) => `«${plain(m)}» (${n} бүтээгдэхүүн)`).join(", ")}.</p>
-        ))}
-        <p className="muted" style={{ marginBottom: 0 }}>Арга энгийн «Гулсах дундаж» аргаас сайн биш бол систем энгийн аргыг сонгодог.</p>
+      <h2>Систем юуг сонгосон бэ</h2>
+      <div className="panel">
+        <div className="tabs" role="tablist" style={{ marginBottom: "0.5rem" }}>
+          {HORIZONS.map(([h, l]) => <button key={h} role="tab" aria-selected={hz === h} className={hz === h ? "on" : ""} onClick={() => setHz(h)}>{l}ын таамаглал</button>)}
+        </div>
+        {sel ? (
+          <ul className="picks">{Object.entries(sel.counts).sort((a, b) => b[1] - a[1]).map(([m, n]) => (
+            <li key={m}><b>{n}</b><div><b>бараанд «{runName(m)}»</b>{m.startsWith("ma") ? <span className="muted small"> — нарийн аргууд энэ энгийн аргаас сайн гараагүй тул үүнийг үлдээсэн</span> : null}</div></li>))}
+          </ul>) : <p className="muted">Сонголт хараахан хийгдээгүй.</p>}
+        <p className="small muted" style={{ marginBottom: 0 }}>Нийт {nSel} бараа. Арга энгийн «Сүүлийн 3 сарын дундаж»-аас сайн биш бол систем энгийнийг нь үлдээдэг.</p>
       </div>
 
       {r.test.length > 0 && (
         <>
-          <h2>Эцсийн шалгалтын үр дүн <Help k="test" /></h2>
-          <div className="panel table-wrap">
-            <table>
-              <thead><tr><th>Хугацаа</th><th>Үнэлгээ</th><th className="num">Сарын алдаа <Help k="WAPE" /></th><th className="num">Энгийн арга</th>
-                <th className="num">Нийт дүнгийн алдаа <Help k="SUM_APE" /></th><th className="num">Энгийн аргаас сайн бүтээгдэхүүн</th><th className="num">Хүрээнд багтсан <Help k="COVERAGE" /></th></tr></thead>
-              <tbody>{r.test.map((t) => {
-                const a = accuracyLevel(t.selected_WAPE.median, t.baseline_WAPE.median);
-                return <tr key={t.horizon}><td>{t.period} ({t.horizon} сар)</td><td><span className={`grade ${a.tone}`}>{a.label}</span></td>
-                  <td className="num">{pct(t.selected_WAPE.median)}</td><td className="num">{pct(t.baseline_WAPE.median)}</td>
-                  <td className="num">{pct(t.selected_SUM_APE.median)}</td>
-                  <td className="num">{pct(t.share_improved_vs_baseline)} ({t.n_compared}-аас)</td>
-                  <td className="num">{t.interval_coverage_80.n ? pct(t.interval_coverage_80.mean) : "—"}</td></tr>;
-              })}</tbody>
-            </table>
-            <p className="small muted" style={{ marginBottom: 0 }}>Утгууд нь бүтээгдэхүүнүүдийн медиан. Улирал, жилийн нийт дүнгийн алдаа нь сар бүрийн алдаанаас бага гардаг — сарын зөрүүнүүд бие биенээ нөхдөг.</p>
-          </div>
+          <h2>Эцсийн шалгалтын дүн <Help k="test" /></h2>
+          <div className="result-cards">{r.test.map((t) => {
+            if (!t.n_compared) return (
+              <div className="panel" key={t.horizon}>
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}><b>{t.period}ын таамаглал</b><span className="grade">Хэмжих боломжгүй</span></div>
+                <p>Эцсийн шалгалтын хугацаа {t.horizon} сараас богино тул {t.period.toLowerCase()}ын алдааг хэмжиж чадсангүй. Таамаглал гарсан ч найдвартай эсэх нь тодорхойгүй — илүү урт хугацааны өгөгдөл хэрэгтэй.</p>
+              </div>);
+            const a = accuracyLevel(t.selected_WAPE.median, t.baseline_WAPE.median);
+            const n = Math.round((t.share_improved_vs_baseline ?? 0) * t.n_compared);
+            return (
+              <div className="panel" key={t.horizon}>
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}><b>{t.period}ын таамаглал</b><span className={`grade ${a.tone}`}>{a.label}</span></div>
+                <p>Сард дунджаар <b>{pct(t.selected_WAPE.median)}</b> зөрдөг (энгийн арга {pct(t.baseline_WAPE.median)}).</p>
+                {t.horizon > 1 && <p>{t.period}ын нийт дүн дунджаар <b>{pct(t.selected_SUM_APE.median)}</b> зөрдөг.</p>}
+                <p>{t.n_compared} барааны <b>{n}</b>-д энгийн аргаас сайн.</p>
+              </div>);
+          })}</div>
+          <p className="small muted">Улирал, жилийн нийт дүн сар бүрийнхээс нарийвчлалтай гардаг — сарын зөрүүнүүд бие биенээ нөхдөг. Тоонууд нь бараануудын медиан.</p>
         </>
       )}
 
       {(r.failures.length > 0 || r.sample.excluded.length > 0) && (
         <>
-          <h2>Анхааруулга</h2>
+          <h2>Анхаарах зүйл</h2>
           <div className="panel small">
-            {r.failures.length > 0 && <p>{r.failures.length} удаа сонгосон арга ажиллаж чадаагүй тул энгийн арга орлон ажилласан (жишээ: {seriesLabel(r.failures[0])} — {r.failures[0].reason}).</p>}
-            {[...r.sample.excluded].sort((a, b) => a.exclude_reason.startsWith("дэд багцад") - b.exclude_reason.startsWith("дэд багцад")).slice(0, 8).map((x) => <div key={x.series_id}>{seriesLabel(x)}: {x.exclude_reason}</div>)}
-            {r.sample.excluded.length > 8 && <div className="muted">…бусад {r.sample.excluded.length - 8} нь Excel тайланд</div>}
+            {r.failures.length > 0 && <p style={{ marginTop: 0 }}><span className="badge warn">Энгийн аргаар</span> {r.failures.length} удаа сонгосон арга ажиллаж чадаагүй тул хамгийн энгийн аргаар таамагласан (жишээ: {seriesLabel(r.failures[0])}). Нуухгүй — тайланд тусад нь харагдана.</p>}
+            {Object.entries(excl).map(([k, xs]) => (
+              <p key={k} style={{ margin: "0.3rem 0" }}><b>{xs.length} бараа</b> хасагдсан — {k}. <span className="muted">{xs.slice(0, 5).map(seriesLabel).join(", ")}{xs.length > 5 ? "…" : ""}</span></p>))}
           </div>
         </>
       )}
+
+      <details className="panel">
+        <summary>Аргууд тус бүрийн дадлага шалгалтын алдаа <span className="muted small">· нарийвчилсан</span></summary>
+        <div className="table-wrap" style={{ marginTop: 8 }}>
+          <p className="small muted">Сарын алдаа (WAPE) — бага байх тусам сайн. Хугацаа бүрийн хамгийн сайн нь тодоор. <Help k="WAPE" /></p>
+          <table>
+            <thead><tr><th>Арга</th>{HORIZONS.map(([h, l]) => <th key={h} className="num">{l}</th>)}</tr></thead>
+            <tbody>{models.map((m) => {
+              const rows = r.validation.filter((v) => v.model === m);
+              return <tr key={m}><td>{runName(m)} <span className="facts-tech">{m.split(" ")[0]}</span></td>{hs.map((h) => {
+                const v = rows.find((x) => x.horizon === h)?.mean;
+                return <td key={h} className="num" style={best[h] === m ? { fontWeight: 700 } : null}>{pct(v)}</td>;
+              })}</tr>;
+            })}</tbody>
+          </table>
+          {r.test.length > 0 && (
+            <table style={{ marginTop: 12 }}>
+              <thead><tr><th>Хугацаа</th><th className="num">WAPE</th><th className="num">Суурь WAPE</th><th className="num">SUM_APE</th><th className="num">MASE</th><th className="num">Хүрээнд багтсан <Help k="COVERAGE" /></th></tr></thead>
+              <tbody>{r.test.map((t) => <tr key={t.horizon}><td>{t.period}</td><td className="num">{pct(t.selected_WAPE.median)}</td><td className="num">{pct(t.baseline_WAPE.median)}</td>
+                <td className="num">{pct(t.selected_SUM_APE.median)}</td><td className="num">{t.selected_MASE.median?.toFixed(2) ?? "—"}</td>
+                <td className="num">{t.interval_coverage_80.n ? pct(t.interval_coverage_80.mean) : "—"}</td></tr>)}</tbody>
+            </table>)}
+        </div>
+      </details>
     </>
   );
 }

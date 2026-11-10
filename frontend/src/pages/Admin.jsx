@@ -1,16 +1,17 @@
 import { useState } from "react";
 import { api } from "../api.js";
 import { ErrorNote, useLoad } from "../components.jsx";
-import { ROLE_DESC, ROLE_LABELS, VERSION_STATUS, branchText } from "../labels.js";
+import { AUDIT_ACTIONS, OBJECT_LABELS, PERMISSION_ROWS, ROLE_DESC, ROLE_LABELS, VERSION_STATUS, branchText } from "../labels.js";
 
 // UC-09: хэрэглэгч, архив, аудит
 export default function Admin() {
   const [tab, setTab] = useState("users");
   return (
     <>
-      <h1>Хэрэглэгч ба тохиргоо</h1>
+      <h1>Хэрэглэгч ба эрх</h1>
+      <p className="muted">Хэн юу хийж болохыг энд тохируулна.</p>
       <div className="tabs" role="tablist">
-        {[["users", "Хэрэглэгч"], ["archive", "Архив"], ["audit", "Аудит"]].map(([k, l]) => (
+        {[["users", "Хэрэглэгч"], ["archive", "Архив"], ["audit", "Үйлдлийн бүртгэл"]].map(([k, l]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
@@ -47,9 +48,7 @@ function Users() {
   const save = (u, patch) => api.patch(`/users/${u.id}`, patch).then(() => { users.reload(); setMsg(`«${u.username}» шинэчлэгдлээ.`); }).catch(setErr);
   return (
     <>
-      <div className="intro">
-        {Object.entries(ROLE_LABELS).map(([k, l]) => <p key={k}><b>{l}</b> — {ROLE_DESC[k]}</p>)}
-      </div>
+      <Permissions />
       <ErrorNote error={err} />
       {msg && <div className="notice">{msg}</div>}
       <div className="panel table-wrap">
@@ -124,15 +123,49 @@ function Archive() {
   );
 }
 
+// Үүрэг бүр юу хийж болох вэ (backend-ийн эрхийн тохиргоотой ижил)
+function Permissions() {
+  const roles = Object.keys(ROLE_LABELS);
+  return (
+    <div className="panel table-wrap">
+      <h3 style={{ marginTop: 0 }}>Үүрэг бүр юу хийж болох вэ?</h3>
+      <ul className="small" style={{ margin: "0 0 0.75rem", paddingLeft: "1.1rem", color: "var(--ink-2)" }}>{roles.map((k) => <li key={k}><b>{ROLE_LABELS[k]}</b> — {ROLE_DESC[k]}</li>)}</ul>
+      <table>
+        <thead><tr><th>Үйлдэл</th>{roles.map((k) => <th key={k} style={{ textAlign: "center" }}>{ROLE_LABELS[k]}</th>)}</tr></thead>
+        <tbody>{PERMISSION_ROWS.map(([what, who]) => (
+          <tr key={what}><td>{what}</td>{roles.map((k) => <td key={k} style={{ textAlign: "center" }}>{who.includes(k) ? <span className="yes">Тийм</span> : <span className="no">—</span>}</td>)}</tr>))}
+        </tbody>
+      </table>
+      <p className="small muted" style={{ marginBottom: 0 }}>Баталгаажсан аргын сонголтыг менежер ч өөрчилж чадахгүй — үүнийг эрх биш, өгөгдлийн сан өөрөө хамгаална.</p>
+    </div>
+  );
+}
+
+const detailText = (d) => {
+  if (!d || !Object.keys(d).length) return "";
+  const parts = [];
+  if (d.name) parts.push(`«${d.name}»`);
+  if (d.reason) parts.push(`шалтгаан: ${d.reason}`);
+  if (d.roles) parts.push(`үүрэг: ${d.roles.map((r) => ROLE_LABELS[r] || r).join(", ")}`);
+  if (d.n !== undefined) parts.push(`${d.n} бараа`);
+  if (d.updated !== undefined) parts.push(`${d.updated} асуудал`);
+  if (d.format) parts.push(String(d.format).toUpperCase());
+  return parts.join(" · ");
+};
+
 function Audit() {
   const log = useLoad(() => api.get("/audit?limit=300"), []);
   return (
     <div className="panel table-wrap">
+      <p className="small muted" style={{ marginTop: 0 }}>Зөвхөн нэмэгддэг — засах, устгах боломжгүй.</p>
       <table>
-        <thead><tr><th>Хэзээ</th><th>Хэрэглэгч</th><th>Үйлдэл</th><th>Объект</th><th>Дэлгэрэнгүй</th></tr></thead>
+        <thead><tr><th>Хэзээ</th><th>Хэн</th><th>Юу хийсэн</th><th>Юуг</th><th>Дэлгэрэнгүй</th></tr></thead>
         <tbody>{(log.data || []).map((a) => (
-          <tr key={a.id}><td className="small">{new Date(a.at).toLocaleString("mn-MN")}</td><td>{a.username || "систем"}</td><td>{a.action}</td>
-            <td>{a.object_type} {a.object_id}</td><td className="small"><code>{JSON.stringify(a.detail)}</code></td></tr>))}
+          <tr key={a.id}><td className="small">{new Date(a.at).toLocaleString("mn-MN")}</td><td>{a.username || "систем"}</td>
+            <td title={a.action}>{AUDIT_ACTIONS[a.action] || a.action}</td>
+            <td>{OBJECT_LABELS[a.object_type] || a.object_type} #{a.object_id}</td>
+            <td className="small">{detailText(a.detail)}
+              {a.detail && Object.keys(a.detail).length > 0 && <details><summary className="facts-tech">техник</summary><code className="facts-tech">{JSON.stringify(a.detail)}</code></details>}</td></tr>))}
         </tbody>
       </table>
     </div>

@@ -24,14 +24,14 @@ class DatasetIn(BaseModel):
 
 
 @router.get("/datasets")
-def list_datasets(conn=Depends(get_conn), user=Depends(require("series_view"))):
+def list_datasets(conn=Depends(get_conn, scope="function"), user=Depends(require("series_view"))):
     return conn.execute(
         "SELECT d.*, (SELECT count(*) FROM raw.dataset_version v WHERE v.dataset_id=d.id) AS n_versions "
         "FROM raw.dataset d ORDER BY d.id DESC").fetchall()
 
 
 @router.post("/datasets", status_code=201)
-def create_dataset(body: DatasetIn, conn=Depends(get_conn), user=Depends(require("import"))):
+def create_dataset(body: DatasetIn, conn=Depends(get_conn, scope="function"), user=Depends(require("import"))):
     if conn.execute("SELECT 1 FROM raw.dataset WHERE name=%s", (body.name,)).fetchone():
         raise ApiError(409, "duplicate_name", "Ийм нэртэй өгөгдлийн багц байна")
     row = conn.execute("INSERT INTO raw.dataset (name, description, source, created_by) VALUES (%s,%s,%s,%s) "
@@ -50,7 +50,7 @@ def _save_upload(upload: UploadFile, folder: Path) -> Path:
 
 
 @router.post("/datasets/{dataset_id}/preview")
-def preview(dataset_id: int, file: UploadFile = File(...), conn=Depends(get_conn),
+def preview(dataset_id: int, file: UploadFile = File(...), conn=Depends(get_conn, scope="function"),
             user=Depends(require("import"))):
     """UC-01 алхам 2: эхний мөрүүдийг уншиж талбарын зураглалыг санал болгоно."""
     tmp = _save_upload(file, Path(get_settings().file_store) / "tmp")
@@ -83,7 +83,7 @@ def create_version(
     calendar_file: UploadFile | None = File(None),
     inventory_file: UploadFile | None = File(None),
     promotion_file: UploadFile | None = File(None),
-    conn=Depends(get_conn), user=Depends(require("import")),
+    conn=Depends(get_conn, scope="function"), user=Depends(require("import")),
 ):
     ds = conn.execute("SELECT * FROM raw.dataset WHERE id=%s", (dataset_id,)).fetchone()
     if not ds:
@@ -163,7 +163,7 @@ def create_version(
 
 
 @router.get("/datasets/{dataset_id}/versions")
-def list_versions(dataset_id: int, conn=Depends(get_conn), user=Depends(require("series_view"))):
+def list_versions(dataset_id: int, conn=Depends(get_conn, scope="function"), user=Depends(require("series_view"))):
     return conn.execute(
         "SELECT v.id, v.version_no, v.file_name, v.sha256, v.imported_at, v.row_count, v.date_min, v.date_max, "
         "v.status, v.archived_at, u.username AS imported_by FROM raw.dataset_version v "
@@ -172,7 +172,7 @@ def list_versions(dataset_id: int, conn=Depends(get_conn), user=Depends(require(
 
 
 @router.get("/dataset-versions")
-def all_versions(conn=Depends(get_conn), user=Depends(require("series_view"))):
+def all_versions(conn=Depends(get_conn, scope="function"), user=Depends(require("series_view"))):
     return conn.execute(
         "SELECT v.id, v.version_no, v.status, v.date_min, v.date_max, v.row_count, v.archived_at, d.name AS dataset "
         "FROM raw.dataset_version v JOIN raw.dataset d ON d.id=v.dataset_id ORDER BY v.id DESC").fetchall()
@@ -187,19 +187,22 @@ def _version(conn, vid: int) -> dict:
 
 
 @router.get("/dataset-versions/{vid}")
-def get_version(vid: int, conn=Depends(get_conn), user=Depends(require("series_view"))):
+def get_version(vid: int, conn=Depends(get_conn, scope="function"), user=Depends(require("series_view"))):
     v = _version(conn, vid)
     v.pop("stored_path", None)
     return v
 
 
 @router.get("/dataset-versions/{vid}/quality")
-def quality_report(vid: int, conn=Depends(get_conn), user=Depends(require("quality_view"))):
+def quality_report(vid: int, conn=Depends(get_conn, scope="function"), user=Depends(require("quality_view"))):
     """FR-D10: дүрмээр болон бүтээгдэхүүнээр."""
     v = _version(conn, vid)
     scope = branch_scope(user)
     by_rule = conn.execute(
-        "SELECT i.rule_id, i.severity::text, i.action, count(*) AS n FROM curated.data_quality_issue i "
+        # n = асуудлын тоо; n_rows = хамаарах мөрийн тоо (DQ-05, DQ-11 нь бараа бүрт нэг асуудал, мөрийн тоо original_value-д)
+        "SELECT i.rule_id, i.severity::text, i.action, count(*) AS n, "
+        "sum(CASE WHEN i.rule_id IN ('DQ-05','DQ-11') AND i.original_value ~ '^[0-9]+$' THEN i.original_value::int ELSE 1 END) AS n_rows "
+        "FROM curated.data_quality_issue i "
         "LEFT JOIN curated.series s ON s.id = i.series_id WHERE i.dataset_version_id=%s "
         + ("" if scope is None else "AND (i.series_id IS NULL OR s.branch_id = ANY(%s)) ") +
         "GROUP BY 1,2,3 ORDER BY 1,2,3", [vid] + ([] if scope is None else [scope])).fetchall()
@@ -234,7 +237,7 @@ def quality_report(vid: int, conn=Depends(get_conn), user=Depends(require("quali
 @router.get("/dataset-versions/{vid}/issues")
 def list_issues(vid: int, severity: str | None = None, rule_id: str | None = None, action: str | None = None,
                 limit: int = Query(200, le=2000), offset: int = 0,
-                conn=Depends(get_conn), user=Depends(require("import"))):
+                conn=Depends(get_conn, scope="function"), user=Depends(require("import"))):
     q = ("SELECT i.*, i.severity::text AS severity, s.product_id, s.product_name, s.branch_id, u.username AS resolved_by_name "
          "FROM curated.data_quality_issue i LEFT JOIN curated.series s ON s.id=i.series_id "
          "LEFT JOIN governance.app_user u ON u.id=i.resolved_by WHERE i.dataset_version_id=%s")
@@ -268,7 +271,7 @@ def _assert_version_editable(conn, vid: int) -> None:
 
 
 @router.patch("/issues/{issue_id}")
-def decide_issue(issue_id: int, body: IssueDecision, conn=Depends(get_conn), user=Depends(require("import"))):
+def decide_issue(issue_id: int, body: IssueDecision, conn=Depends(get_conn, scope="function"), user=Depends(require("import"))):
     """FR-D6: шалтгаан, хэрэглэгч хадгалагдана; анхны утга хэвээр (trigger)."""
     it = conn.execute("SELECT * FROM curated.data_quality_issue WHERE id=%s", (issue_id,)).fetchone()
     if not it:
@@ -295,13 +298,13 @@ def decide_issue(issue_id: int, body: IssueDecision, conn=Depends(get_conn), use
 
 
 class BulkDecision(BaseModel):
-    rule_id: str = Field(pattern=r"^DQ-(0[1-9]|10)$")
+    rule_id: str = Field(pattern=r"^DQ-(0[1-9]|1[01])$")
     action: str = Field(pattern="^(accepted|excluded)$")
     reason: str = Field(min_length=3)
 
 
 @router.post("/dataset-versions/{vid}/issues/bulk")
-def decide_bulk(vid: int, body: BulkDecision, conn=Depends(get_conn), user=Depends(require("import"))):
+def decide_bulk(vid: int, body: BulkDecision, conn=Depends(get_conn, scope="function"), user=Depends(require("import"))):
     """Нэг дүрмийн бүх нээлттэй асуудлыг нэг шалтгаанаар шийдэх. «excluded» нь зөвхөн мөртэй асуудалд."""
     _version(conn, vid)
     _assert_version_editable(conn, vid)
@@ -316,7 +319,7 @@ def decide_bulk(vid: int, body: BulkDecision, conn=Depends(get_conn), user=Depen
 
 
 @router.post("/dataset-versions/{vid}/apply", status_code=202)
-def apply_decisions(vid: int, conn=Depends(get_conn), user=Depends(require("import"))):
+def apply_decisions(vid: int, conn=Depends(get_conn, scope="function"), user=Depends(require("import"))):
     """UC-02: шийдвэрийг хэрэглэж өдрийн цувааг дахин байгуулна, төлвийг батлана."""
     _version(conn, vid)
     _assert_version_editable(conn, vid)
@@ -327,7 +330,7 @@ def apply_decisions(vid: int, conn=Depends(get_conn), user=Depends(require("impo
 
 
 @router.get("/dataset-versions/{vid}/series")
-def list_series(vid: int, conn=Depends(get_conn), user=Depends(require("series_view"))):
+def list_series(vid: int, conn=Depends(get_conn, scope="function"), user=Depends(require("series_view"))):
     return conn.execute(
         "SELECT s.id, s.product_id, s.product_name, s.branch_id, s.unit, count(*) AS n_days, min(d.day) AS first_day, "
         "max(d.day) AS last_day, sum(d.sales_qty) AS total_qty, avg((d.sales_qty=0)::int)::float AS zero_share "
@@ -337,7 +340,7 @@ def list_series(vid: int, conn=Depends(get_conn), user=Depends(require("series_v
 
 
 @router.get("/dataset-versions/{vid}/series/{series_id}/days")
-def series_days(vid: int, series_id: int, conn=Depends(get_conn), user=Depends(require("quality_view"))):
+def series_days(vid: int, series_id: int, conn=Depends(get_conn, scope="function"), user=Depends(require("quality_view"))):
     """Өдрийн төлвийн календар (Чанарын шалгалтын дэлгэц)."""
     s = conn.execute("SELECT branch_id FROM curated.series WHERE id=%s", (series_id,)).fetchone()
     if not s:

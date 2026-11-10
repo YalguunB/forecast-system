@@ -29,10 +29,11 @@ def users(client, database):
                      "ON CONFLICT (username) DO NOTHING", (hash_password("root-pass-123"),))
         conn.commit()
     tok = {"admin": _login(client, "root", "root-pass-123")}
-    for name, roles in (("steward", ["data_steward"]), ("analyst", ["analyst"]), ("manager", ["manager"]),
-                        ("researcher", ["researcher"])):
+    # Гурван үүрэг (005_three_roles): менежер бүх ажлыг хийнэ, удирдлага харж экспортлоно, админ системийг
+    for name, roles in (("manager", ["manager"]), ("manager2", ["manager"]), ("executive", ["executive"])):
         r = client.post("/api/v1/users", headers=_h(tok["admin"]),
-                        json={"username": name, "password": f"{name}-pass-1", "roles": roles})
+                        json={"username": name, "password": f"{name}-pass-1", "roles": roles,
+                              **({"branches": ["*"]} if "manager" in roles else {})})
         assert r.status_code == 201, r.text
         tok[name] = _login(client, name, f"{name}-pass-1")
     return tok
@@ -60,11 +61,11 @@ def _upload(client, tok, ds, folder, mapping, force=False):
 
 @pytest.fixture(scope="module")
 def version(client, users, synthetic):
-    st = users["steward"]
+    st = users["manager"]
     ds = client.post("/api/v1/datasets", headers=_h(st), json={"name": "Синтетик", "source": "synthetic"}).json()["id"]
     prev = client.post(f"/api/v1/datasets/{ds}/preview", headers=_h(st),
                        files={"file": ("t.csv", (synthetic / "transactions.csv").read_bytes(), "text/csv")}).json()
-    assert prev["suggested_mapping"] == MAPPING
+    assert {k: v for k, v in prev["suggested_mapping"].items() if v} == MAPPING   # заавал биш хоосон талбар (order_status …) тоолохгүй
 
     bad = _upload(client, st, ds, synthetic, {k: v for k, v in MAPPING.items() if k != "qty"})
     assert bad.status_code == 422 and bad.json()["code"] == "missing_required_fields"   # UC-01 2а
@@ -94,7 +95,7 @@ def version(client, users, synthetic):
 
 
 def test_full_flow(client, users, version):
-    rs, an = users["researcher"], users["analyst"]
+    rs, an = users["manager"], users["manager"]
     d = client.get("/api/v1/experiments/defaults", headers=_h(rs)).json()
     assert d["targets"]["sales"] == "Борлуулалтын таамаглал"
     body = {"name": "Үндсэн S", "dataset_version_id": version, "target": "sales",
@@ -112,7 +113,7 @@ def test_full_flow(client, users, version):
     e = client.get(f"/api/v1/experiments/{eid}", headers=_h(rs)).json()
     assert e["status"] == "validation_done" and e["protocol_hash"]
     sel = client.get(f"/api/v1/experiments/{eid}/selection", headers=_h(rs)).json()
-    assert set(sel["summary"]) == {7, 14, 30} or set(sel["summary"]) == {"7", "14", "30"}
+    assert {str(k) for k in sel["summary"]} == {"1", "3", "12"}                       # сар, улирал, жил
     assert client.post(f"/api/v1/experiments/{eid}/test", headers=_h(rs)).status_code == 409   # түгжээгүй
     lk = client.post(f"/api/v1/experiments/{eid}/lock", headers=_h(rs)).json()
     assert lk["status"] == "locked" and len(lk["selection_hash"]) == 64
@@ -132,14 +133,15 @@ def test_full_flow(client, users, version):
     # UC-03: таамаглал харах (FR-F2: зорилтын нэр, нэгж, эхлэл, run үргэлж)
     series = client.get(f"/api/v1/forecasts/series?experiment_id={eid}", headers=_h(an)).json()
     sid = series[0]["series_id"]
-    fc = client.get(f"/api/v1/forecasts?experiment_id={eid}&series={sid}&horizon=14", headers=_h(an)).json()
+    fc = client.get(f"/api/v1/forecasts?experiment_id={eid}&series={sid}&horizon=12", headers=_h(an)).json()
     assert fc["target_label"] == "Борлуулалтын таамаглал" and fc["unit"] and fc["run_id"] and fc["origin_date"]
-    assert len(fc["forecast"]) == 14 and fc["history"] and fc["split"] == "live"
+    assert len(fc["forecast"]) == 12 and fc["history"] and fc["split"] == "live"
     assert fc["interval"]["available"] == (fc["forecast"][0]["q_lo"] is not None)        # FR-E4
-    assert all("state" in h for h in fc["history"])
-    test_fc = client.get(f"/api/v1/forecasts?experiment_id={eid}&series={sid}&horizon=7&split=test",
+    assert all({"month", "value"} <= set(h) for h in fc["history"])                  # сарын түүх
+    assert fc["data_states"]                                                           # өдрийн төлөв (FR-F3) нэгтгэлээр
+    test_fc = client.get(f"/api/v1/forecasts?experiment_id={eid}&series={sid}&horizon=1&split=test",
                          headers=_h(an)).json()
-    assert len(test_fc["origins"]) == 9 and test_fc["actual"]
+    assert len(test_fc["origins"]) == 12 and test_fc["actual"]          # тест 12 сар, сар бүр эхлэл
 
     # UC-06: залруулга — анхны таамаглал өөрчлөгдөхгүй (FR-G1, §4.8 дүрэм 10)
     first = fc["forecast"][0]
@@ -147,7 +149,7 @@ def test_full_flow(client, users, version):
         "run_id": fc["run_id"], "series_id": sid, "target_date": first["target_date"],
         "adjusted_value": first["y_hat"] + 5, "reason": "урамшуулал төлөвлөсөн"})
     assert r.status_code == 201 and r.json()["original_value"] == pytest.approx(first["y_hat"])
-    fc2 = client.get(f"/api/v1/forecasts?experiment_id={eid}&series={sid}&horizon=14", headers=_h(an)).json()
+    fc2 = client.get(f"/api/v1/forecasts?experiment_id={eid}&series={sid}&horizon=12", headers=_h(an)).json()
     assert fc2["forecast"][0]["y_hat"] == pytest.approx(first["y_hat"])
     assert fc2["adjusted"][0]["adjusted_value"] == pytest.approx(first["y_hat"] + 5)
     fva = client.get(f"/api/v1/adjustments/value-added?experiment_id={eid}", headers=_h(an)).json()
@@ -155,7 +157,8 @@ def test_full_flow(client, users, version):
 
     # UC-05, FR-F4
     cmp_ = client.get(f"/api/v1/forecasts/compare?experiment_id={eid}&series={sid}", headers=_h(an)).json()
-    assert len(cmp_["runs"]) == 5 and len(cmp_["origins"]) == 5
+    assert len(cmp_["runs"]) == len(d["protocol"]["models"])                         # протоколын загвар бүр (8)
+    assert len(cmp_["origins"]) == 12                                                  # validation-ийн 12 эхлэл
     ex = client.get(f"/api/v1/forecasts/{fc['run_id']}/explain?series={sid}", headers=_h(an)).json()
     assert ex["feature_behaviour"]["available"] is False
 
@@ -163,7 +166,7 @@ def test_full_flow(client, users, version):
     csv = client.get(f"/api/v1/export/forecasts?experiment_id={eid}&format=csv", headers=_h(an))
     df = pd.read_csv(io.StringIO(csv.content.decode("utf-8-sig")))
     assert (df["target_label"] == "Борлуулалтын таамаглал").all() and df["adjusted_value"].notna().sum() == 1
-    xl = client.get(f"/api/v1/export/forecasts?experiment_id={eid}&format=xlsx", headers=_h(users["manager"]))
+    xl = client.get(f"/api/v1/export/forecasts?experiment_id={eid}&format=xlsx", headers=_h(users["executive"]))
     assert xl.status_code == 200
 
     # FR-G3: аудит
@@ -174,32 +177,34 @@ def test_full_flow(client, users, version):
 
 
 def test_permission_matrix(client, users, version):
+    """Хүснэгт 4.11 (гурван үүрэг)."""
     h = {k: _h(v) for k, v in users.items()}
     assert client.get("/api/v1/experiments").status_code == 401
-    assert client.post("/api/v1/experiments", headers=h["analyst"], json={}).status_code in (403, 422)
-    assert client.post("/api/v1/experiments", headers=h["analyst"],
+    ex = h["executive"]
+    assert client.post("/api/v1/experiments", headers=ex, json={}).status_code in (403, 422)
+    assert client.post("/api/v1/experiments", headers=ex,
                        json={"name": "x", "dataset_version_id": version, "target": "sales"}).status_code == 403
-    assert client.post("/api/v1/adjustments", headers=h["manager"], json={
+    assert client.post("/api/v1/adjustments", headers=ex, json={
         "run_id": 1, "series_id": 1, "target_date": "2026-10-01", "adjusted_value": 1, "reason": "abc"}).status_code == 403
-    assert client.get(f"/api/v1/dataset-versions/{version}/quality", headers=h["manager"]).status_code == 403
-    assert client.get(f"/api/v1/dataset-versions/{version}/quality", headers=h["researcher"]).status_code == 200
-    assert client.post("/api/v1/datasets", headers=h["researcher"], json={"name": "z"}).status_code == 403
-    assert client.get("/api/v1/users", headers=h["steward"]).status_code == 403
+    assert client.get(f"/api/v1/dataset-versions/{version}/quality", headers=ex).status_code == 200   # удирдлага харна
+    assert client.get("/api/v1/experiments", headers=ex).status_code == 200
+    assert client.post("/api/v1/datasets", headers=ex, json={"name": "z"}).status_code == 403
+    assert client.get("/api/v1/users", headers=h["manager"]).status_code == 403
     assert client.get("/api/v1/audit", headers=h["admin"]).status_code == 200
     assert client.get("/api/v1/experiments", headers=h["admin"]).status_code == 403      # админ таамаглал харахгүй
-    assert client.get("/api/v1/export/forecasts?experiment_id=1", headers=h["steward"]).status_code == 403
+    assert client.get("/api/v1/export/forecasts?experiment_id=1", headers=h["admin"]).status_code == 403
 
 
 def test_cancel_and_retry_validation(client, users, version):
-    rs = _h(users["researcher"])
+    rs = _h(users["manager"])
     eid = client.post("/api/v1/experiments", headers=rs, json={
         "name": "Цуцлах", "dataset_version_id": version, "target": "demand",
-        "protocol": {"sample": {"max_series": 3}, "models": [{"name": "snaive", "params": {"m": 7}},
+        "protocol": {"sample": {"max_series": 3}, "models": [{"name": "ma", "params": {"window": 3}},   # суурь заавал
                                                             {"name": "sba", "params": {"alpha": 0.1}}]}}).json()["id"]
     job = client.post(f"/api/v1/experiments/{eid}/validate", headers=rs).json()["job_id"]
     assert client.post(f"/api/v1/jobs/{job}/cancel", headers=rs).json()["cancel_requested"]
     assert client.get(f"/api/v1/jobs/{job}", headers=rs).json()["status"] == "cancelled"
-    assert client.get(f"/api/v1/jobs/{job}", headers=_h(users["analyst"])).status_code == 403   # эзэмшигч л
+    assert client.get(f"/api/v1/jobs/{job}", headers=_h(users["manager2"])).status_code == 403   # эзэмшигч л
     drain()
     e = client.get(f"/api/v1/experiments/{eid}", headers=rs).json()
     assert e["status"] == "validating"                                  # протокол түгжигдсэн хэвээр

@@ -11,15 +11,16 @@ import Compare from "./pages/Compare.jsx";
 import Reports from "./pages/Reports.jsx";
 import Admin from "./pages/Admin.jsx";
 
+// n: менежерийн ажлын дарааллын дугаар (цэсэнд харагдана)
 const SCREENS = [
   { path: "dashboard", title: "Нүүр", roles: null, el: Dashboard },
-  { path: "import", title: "Өгөгдөл оруулах", roles: ["manager"], el: Import },
-  { path: "quality", title: "Өгөгдлийн чанар", roles: ["executive", "manager"], el: Quality },
-  { path: "experiments", title: "Таамаглал бэлтгэх", roles: ["manager"], el: Experiments },
-  { path: "forecast", title: "Бүтээгдэхүүний таамаглал", roles: ["executive", "manager"], el: Forecast },
+  { path: "import", n: 1, title: "Өгөгдөл оруулах", roles: ["manager"], el: Import },
+  { path: "quality", n: 2, title: "Өгөгдөл шалгах", roles: ["executive", "manager"], el: Quality },
+  { path: "experiments", n: 3, title: "Таамаглал гаргуулах", roles: ["manager"], el: Experiments },
+  { path: "forecast", n: 4, title: "Бүтээгдэхүүний таамаглал", roles: ["executive", "manager"], el: Forecast },
   { path: "reports", title: "Тайлан", roles: ["executive", "manager"], el: Reports },
-  { path: "compare", title: "Харьцуулалт", roles: ["executive", "manager"], el: Compare },
-  { path: "admin", title: "Хэрэглэгч ба тохиргоо", roles: ["admin"], el: Admin },
+  { path: "compare", title: "Аргуудын харьцуулалт", roles: ["executive", "manager"], el: Compare },
+  { path: "admin", title: "Хэрэглэгч ба эрх", roles: ["admin"], el: Admin },
 ];
 
 function parseHash() {
@@ -52,7 +53,9 @@ export default function App() {
         <div className="brand">Таамаглалын систем<span>Сар, улирал, жилийн таамаглал</span></div>
         {visible.map((x) => (
           <a key={x.path} href={`#/${x.path}`} className={x === screen ? "active" : ""}
-             aria-current={x === screen ? "page" : undefined}>{x.title}</a>
+             aria-current={x === screen ? "page" : undefined}>
+            {x.n && roles.includes("manager") ? <span className="step-n" aria-hidden="true">{x.n}</span> : null}{x.title}
+          </a>
         ))}
         <div className="who">
           {s.user.full_name || s.user.username}

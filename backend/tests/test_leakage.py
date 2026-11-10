@@ -47,20 +47,37 @@ def test_features_ignore_values_after_origin(data):
     assert (a["price_approved"] == 100.0).all()          # ирээдүйн бодит үнэ орохгүй (DQ-10)
 
 
-@settings(max_examples=25, deadline=None, suppress_health_check=[HealthCheck.too_slow])
-@given(series_and_origin(), st.sampled_from(sorted(MODEL_REGISTRY)))
+NM = 60
+IDX_M = pd.date_range("2020-01-01", periods=NM, freq="MS")      # загварууд сарын түвшинд ажиллана (006)
+
+
+@st.composite
+def monthly_series_and_origin(draw):
+    vals = draw(st.lists(st.one_of(st.floats(0, 500, allow_nan=False), st.just(float("nan"))),
+                         min_size=NM, max_size=NM))
+    vals[0] = 10.0
+    origin_i = draw(st.integers(24, NM - 13))
+    future = draw(st.lists(st.floats(0, 5000, allow_nan=False), min_size=NM - origin_i - 1,
+                           max_size=NM - origin_i - 1))
+    return pd.Series(vals, index=IDX_M), origin_i, future
+
+
+@settings(max_examples=40, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+@given(monthly_series_and_origin(), st.sampled_from(sorted(MODEL_REGISTRY)))
 def test_model_forecast_ignores_values_after_origin(data, model_name):
+    """Эхлэл o-оос хойших сарын утгыг өөрчлөхөд o дахь таамаглал өөрчлөгдөхгүй. Загвар цувааг
+    хүлээн авахгүй (алдаа) бол run_series энгийн загвар руу шилждэг тул алдаа ч мөн адил байх ёстой."""
     y, oi, future = data
-    o = IDX[oi]
-    ctx = FitContext(series_id=1, origin=o, target="sales", horizon=30, seed=1)
+    o = IDX_M[oi]
+    ctx = FitContext(series_id=1, origin=o, target="sales", horizon=12, seed=1)
     outs = []
     for series in (y, _perturb(y, oi, future)):
         m = make_model(model_name)
         try:
             m.fit(series.loc[:o], ctx)
             outs.append(m.predict(ctx)["y_hat"].values)
-        except ValueError:
-            outs.append("error")
+        except Exception as exc:                    # noqa: BLE001 — статистикийн сангийн бүх алдаа
+            outs.append(f"error: {type(exc).__name__}")
     if isinstance(outs[0], str) or isinstance(outs[1], str):
         assert outs[0] == outs[1]
     else:
@@ -68,8 +85,8 @@ def test_model_forecast_ignores_values_after_origin(data, model_name):
 
 
 def test_model_refuses_history_after_origin():
-    y = pd.Series(np.ones(60), index=pd.date_range("2025-01-01", periods=60))
-    ctx = FitContext(series_id=1, origin=y.index[30], target="sales", horizon=7, seed=1)
+    y = pd.Series(np.ones(60), index=pd.date_range("2020-01-01", periods=60, freq="MS"))
+    ctx = FitContext(series_id=1, origin=y.index[30], target="sales", horizon=12, seed=1)
     with pytest.raises(AssertionError, match="алдагдал"):
         make_model("naive").fit(y, ctx)
 

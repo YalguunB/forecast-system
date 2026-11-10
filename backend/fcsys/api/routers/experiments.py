@@ -12,7 +12,7 @@ from ...db import audit, jsonb
 from ...engine.grid import TARGET_LABELS
 from ...engine.models import MODEL_REGISTRY, PLANNED_MODELS
 from ...engine.monthly import add_months, last_complete_month, months_between
-from ...engine.protocol import (DEFAULT_PROTOCOL, ProtocolError, canonical_hash, is_monthly, normalize_protocol,
+from ...engine.protocol import (DEFAULT_PROTOCOL, MIN_FULL_MONTHS, ProtocolError, canonical_hash, is_monthly, normalize_protocol,
                                 suggest_protocol)
 from ...engine.report import experiment_report, report_xlsx
 from ..core import ApiError, audit_rejected, branch_scope, get_conn, not_found, require, require_monthly
@@ -50,7 +50,7 @@ def _protocol(p: dict) -> dict:
 
 
 @router.get("/experiments/defaults")
-def defaults(dataset_version_id: int | None = None, conn=Depends(get_conn), user=Depends(require("experiment"))):
+def defaults(dataset_version_id: int | None = None, conn=Depends(get_conn, scope="function"), user=Depends(require("experiment"))):
     """Анхдагч протокол. Хувилбар өгвөл өгөгдлийн бүтэн сарын тоонд тохируулсан хуваалт санал болгоно."""
     proto, info = DEFAULT_PROTOCOL, None
     if dataset_version_id:
@@ -60,8 +60,17 @@ def defaults(dataset_version_id: int | None = None, conn=Depends(get_conn), user
             first = dmin if dmin.day == 1 else add_months(dmin, 1).date()
             n = months_between(first, last_complete_month(v["date_max"])) + 1
             proto = suggest_protocol(n)
+            # Сийрэг байдал: бараа бүрийн саруудын хэдэн хувьд борлуулалт байсан бэ (медиан) — 2017 шиг
+            # жилд нэг удаа зарагддаг өгөгдөлд менежерийг урьдчилан анхааруулна
+            dens = conn.execute(
+                "WITH m AS (SELECT series_id, date_trunc('month', day) AS mo, sum(sales_qty) AS q "
+                "  FROM curated.daily_series WHERE dataset_version_id=%s GROUP BY 1, 2) "
+                "SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY share) AS med, count(*) AS n_series FROM "
+                "  (SELECT series_id, avg((q > 0)::int)::float AS share FROM m GROUP BY 1) s",
+                (dataset_version_id,)).fetchone()
             info = {"full_months": n, "first_full_month": str(first), "last_full_month": str(last_complete_month(v["date_max"]).date()),
-                    "year_horizon_testable": proto["test_months"] >= 12}
+                    "year_horizon_testable": proto["test_months"] >= 12, "min_months": MIN_FULL_MONTHS,
+                    "n_series": dens["n_series"], "sales_month_share": dens["med"]}
     cats = []
     if dataset_version_id:
         cats = [r["c"] for r in conn.execute(
@@ -72,7 +81,7 @@ def defaults(dataset_version_id: int | None = None, conn=Depends(get_conn), user
 
 
 @router.get("/experiments")
-def list_experiments(conn=Depends(get_conn), user=Depends(require("forecast_view"))):
+def list_experiments(conn=Depends(get_conn, scope="function"), user=Depends(require("forecast_view"))):
     rows = conn.execute(
         "SELECT e.id, e.name, e.target, e.status, e.dataset_version_id, e.created_at, e.locked_at, e.archived_at, "
         "coalesce(e.protocol->>'grain', '') <> 'month' AS legacy, "
@@ -85,7 +94,7 @@ def list_experiments(conn=Depends(get_conn), user=Depends(require("forecast_view
 
 
 @router.post("/experiments", status_code=201)
-def create_experiment(body: ExperimentIn, conn=Depends(get_conn), user=Depends(require("experiment"))):
+def create_experiment(body: ExperimentIn, conn=Depends(get_conn, scope="function"), user=Depends(require("experiment"))):
     v = conn.execute("SELECT status, archived_at FROM raw.dataset_version WHERE id=%s",
                      (body.dataset_version_id,)).fetchone()
     if not v:
@@ -111,7 +120,7 @@ def create_experiment(body: ExperimentIn, conn=Depends(get_conn), user=Depends(r
 
 
 @router.get("/experiments/{eid}")
-def get_experiment(eid: int, conn=Depends(get_conn), user=Depends(require("forecast_view"))):
+def get_experiment(eid: int, conn=Depends(get_conn, scope="function"), user=Depends(require("forecast_view"))):
     e = _exp(conn, eid)
     e["jobs"] = conn.execute("SELECT id, type, status, progress, error, created_at, finished_at FROM governance.job "
                              "WHERE parent_id IS NULL AND type IN ('validate','test') AND (payload->>'experiment_id')::bigint=%s "
@@ -120,7 +129,7 @@ def get_experiment(eid: int, conn=Depends(get_conn), user=Depends(require("forec
 
 
 @router.put("/experiments/{eid}/protocol")
-def update_protocol(eid: int, body: ProtocolIn, conn=Depends(get_conn), user=Depends(require("experiment"))):
+def update_protocol(eid: int, body: ProtocolIn, conn=Depends(get_conn, scope="function"), user=Depends(require("experiment"))):
     e = _exp(conn, eid, lock=True)
     proto = _protocol(body.protocol)
     if e["status"] != "draft":
@@ -134,7 +143,7 @@ def update_protocol(eid: int, body: ProtocolIn, conn=Depends(get_conn), user=Dep
 
 
 @router.post("/experiments/{eid}/validate", status_code=202)
-def start_validation(eid: int, conn=Depends(get_conn), user=Depends(require("experiment"))):
+def start_validation(eid: int, conn=Depends(get_conn, scope="function"), user=Depends(require("experiment"))):
     """UC-04 алхам 4: протоколыг түгжиж (protocol_hash) validation ажлыг эхлүүлнэ."""
     e = _exp(conn, eid, lock=True)
     require_monthly(e)
@@ -157,7 +166,7 @@ def start_validation(eid: int, conn=Depends(get_conn), user=Depends(require("exp
 
 
 @router.get("/experiments/{eid}/selection")
-def get_selection(eid: int, conn=Depends(get_conn), user=Depends(require("experiment"))):
+def get_selection(eid: int, conn=Depends(get_conn, scope="function"), user=Depends(require("experiment"))):
     e = _exp(conn, eid)
     rows = conn.execute(
         "SELECT ms.series_id, s.product_id, s.product_name, s.product_category, s.branch_id, ms.horizon, ms.run_id, r.model, r.params, ms.rule, "
@@ -173,7 +182,7 @@ def get_selection(eid: int, conn=Depends(get_conn), user=Depends(require("experi
 
 
 @router.post("/experiments/{eid}/lock")
-def lock_selection(eid: int, conn=Depends(get_conn), user=Depends(require("experiment"))):
+def lock_selection(eid: int, conn=Depends(get_conn, scope="function"), user=Depends(require("experiment"))):
     """UC-04 алхам 6: сонголтыг түгжинэ (selection_hash). Үүнээс хойш model_selection өөрчлөгдөхгүй."""
     e = _exp(conn, eid, lock=True)
     require_monthly(e)
@@ -190,7 +199,7 @@ def lock_selection(eid: int, conn=Depends(get_conn), user=Depends(require("exper
 
 
 @router.post("/experiments/{eid}/test", status_code=202)
-def run_test(eid: int, conn=Depends(get_conn), user=Depends(require("experiment"))):
+def run_test(eid: int, conn=Depends(get_conn, scope="function"), user=Depends(require("experiment"))):
     """§4.8 дүрэм 7: тест зөвхөн locked үед нэг удаа; давтан дуудахад 409."""
     e = _exp(conn, eid, lock=True)
     require_monthly(e)
@@ -211,7 +220,7 @@ def run_test(eid: int, conn=Depends(get_conn), user=Depends(require("experiment"
 
 
 @router.get("/experiments/{eid}/runs")
-def list_runs(eid: int, conn=Depends(get_conn), user=Depends(require("experiment"))):
+def list_runs(eid: int, conn=Depends(get_conn, scope="function"), user=Depends(require("experiment"))):
     _exp(conn, eid)
     return conn.execute(
         "SELECT r.*, (SELECT count(*) FROM forecast.run_failure f WHERE f.run_id=r.run_id) AS n_failures "
@@ -219,7 +228,7 @@ def list_runs(eid: int, conn=Depends(get_conn), user=Depends(require("experiment
 
 
 @router.get("/experiments/{eid}/report")
-def get_report(eid: int, format: str = "json", conn=Depends(get_conn), user=Depends(require("forecast_view"))):
+def get_report(eid: int, format: str = "json", conn=Depends(get_conn, scope="function"), user=Depends(require("forecast_view"))):
     e = _exp(conn, eid)
     require_monthly(e)
     rep = experiment_report(conn, eid)
@@ -233,7 +242,7 @@ def get_report(eid: int, format: str = "json", conn=Depends(get_conn), user=Depe
 
 
 @router.post("/experiments/{eid}/archive")
-def archive_experiment(eid: int, conn=Depends(get_conn), user=Depends(require("admin"))):
+def archive_experiment(eid: int, conn=Depends(get_conn, scope="function"), user=Depends(require("admin"))):
     _exp(conn, eid)
     conn.execute("UPDATE experiment.experiment SET archived_at=coalesce(archived_at, now()) WHERE id=%s", (eid,))
     audit(conn, user["id"], "archive", "experiment", eid, {})
