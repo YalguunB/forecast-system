@@ -265,6 +265,13 @@ def create_user(body: UserIn, conn=Depends(get_conn, scope="function"), user=Dep
 def update_user(uid: int, body: UserPatch, conn=Depends(get_conn, scope="function"), user=Depends(require("admin"))):
     if body.roles is not None:
         _check_roles(body.roles)
+    cur = conn.execute("SELECT roles, branches FROM governance.app_user WHERE id=%s", (uid,)).fetchone()
+    if not cur:
+        raise not_found("Хэрэглэгч", uid)
+    roles_after = body.roles if body.roles is not None else cur["roles"]
+    branches_after = body.branches if body.branches is not None else cur["branches"]
+    if "manager" in roles_after and not branches_after:   # үүсгэхтэй ижил дүрэм (create_user)
+        raise ApiError(422, "branches_required", "Менежерт дор хаяж нэг салбар оноох шаардлагатай (эсвэл «Бүх салбар»)")
     row = conn.execute(
         "UPDATE governance.app_user SET full_name=coalesce(%s, full_name), roles=coalesce(%s, roles), "
         "branches=coalesce(%s, branches), is_active=coalesce(%s, is_active), password_hash=coalesce(%s, password_hash) "
