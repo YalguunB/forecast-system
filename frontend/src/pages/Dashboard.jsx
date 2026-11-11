@@ -67,7 +67,6 @@ export default function Dashboard({ user }) {
       {running.length > 0 && (
         <>
           <h2>Ажиллаж байна</h2>
-          <p className="small muted">Хуудсаа хаасан ч үргэлжилнэ.</p>
           {running.map((j) => <JobProgress key={j.id} jobId={j.id} onDone={() => { jobs.reload(); versions.reload(); exps.reload(); }} />)}
         </>
       )}
