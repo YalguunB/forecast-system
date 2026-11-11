@@ -117,7 +117,7 @@ function Overview({ eid }) {
       <div className="panel table-wrap">
         <h3 style={{ marginTop: 0 }}>Арга бүрийн дүн</h3>
         <table>
-          <thead><tr><th>Арга</th><th>Энгийн аргатай харьцуулахад <Help k="WAPE" /></th><th className="num">Сарын алдаа</th><th className="num">Сонгосон бараа</th></tr></thead>
+          <thead><tr><th>Арга</th><th>Энгийн аргатай харьцуулахад <Help k="WAPE" /></th><th className="num">Сарын алдаа</th><th className="num">Хэдэн бараанд сонгосон</th></tr></thead>
           <tbody>{rows.map((v) => {
             const isBase = v === base;
             const d = base && !isBase ? v.mean / base.mean - 1 : null;
@@ -126,7 +126,8 @@ function Overview({ eid }) {
               <tr key={v.model} style={isBase ? { background: "var(--paper)" } : null}>
                 <td>{runName(v.model)}{isBase ? <> <span className="badge">Энгийн арга</span></> : null}</td>
                 <td>{isBase ? <span className="muted small">Бусдыг үүнтэй харьцуулна</span>
-                  : <span style={{ color: d <= 0 ? "var(--ok)" : "var(--danger)", fontWeight: 600 }}>{Math.abs(d * 100).toFixed(0)}% {d <= 0 ? "бага алддаг" : "их алддаг"}</span>}</td>
+                  : Math.abs(d) < 0.005 ? <span className="muted">Адил</span>
+                  : <span style={{ color: d < 0 ? "var(--ok)" : "var(--danger)", fontWeight: 600 }}>{Math.abs(d * 100).toFixed(0)}% {d < 0 ? "бага алддаг" : "их алддаг"}</span>}</td>
                 <td className="num">{pct(v.mean)}</td>
                 <td className="num">{n ? <span className="badge ok">{n}</span> : <span className="muted">—</span>}</td>
               </tr>);
