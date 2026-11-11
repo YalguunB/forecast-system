@@ -38,8 +38,7 @@ function List() {
 
   return (
     <>
-      <h1>Таамаглал гаргуулах</h1>
-      <p className="muted">Систем хэд хэдэн аргыг туршиж, хамгийн сайныг нь сонгоно.</p>
+      <h1>Таамаглал бэлтгэх</h1>
       <div className="split">
         <div className="panel table-wrap">
           {exps.loading ? <Loading /> : exps.data?.length ? (
@@ -169,7 +168,7 @@ function Detail({ id }) {
         )}
         {e.status === "locked" && !e.test_job_id && (
           <>
-            <h3 style={{ marginTop: 0 }}>3. Таамаглал гаргах <Help k="test" /></h3>
+            <h3 style={{ marginTop: 0 }}>3. Таамаглал бэлтгэх <Help k="test" /></h3>
             <p>Сонгосон аргыг сүүлийн саруудад шалгаад ирэх 12 сарын таамаглал гаргана.</p>
             <button className="warn" onClick={() => act(async () => setJob((await api.post(`/experiments/${id}/test`)).job_id))}>Эхлүүлэх</button>
           </>

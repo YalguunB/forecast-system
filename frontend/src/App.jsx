@@ -50,7 +50,7 @@ export default function App() {
   return (
     <div className="shell">
       <nav className="rail" aria-label="Үндсэн цэс">
-        <div className="brand">Таамаглалын систем<span>Сар, улирал, жилийн таамаглал</span></div>
+        <div className="brand">Таамаглалын систем</div>
         {visible.map((x) => (
           <a key={x.path} href={`#/${x.path}`} className={x === screen ? "active" : ""}
              aria-current={x === screen ? "page" : undefined}>

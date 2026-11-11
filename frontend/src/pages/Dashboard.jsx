@@ -30,7 +30,7 @@ export default function Dashboard({ user }) {
     { title: "Өгөгдөл шалгах", done: cleanData,
       text: failed ? "Нэг файлд засах алдаа байна." : cleanData ? "Өгөгдөл бэлэн." : "Систем автоматаар шалгана.",
       action: hasData && { label: failed ? "Алдааг засах" : "Шалгалтыг харах", to: ["quality", failed ? { version: failed.id } : {}] } },
-    { title: "Таамаглал гаргуулах", done: ready.length > 0,
+    { title: "Таамаглал бэлтгэх", done: ready.length > 0,
       text: inProgress ? `${inProgress.name}: ${Object.fromEntries(EXP_STEPS)[inProgress.status].toLowerCase()}.` : ready.length ? `${ready.length} таамаглал бэлэн.` : "Систем хамгийн тохирох аргыг сонгоно.",
       action: cleanData && isManager && { label: inProgress ? "Үргэлжлүүлэх" : "Шинэ таамаглал", to: ["experiments", inProgress ? { id: inProgress.id } : {}] } },
     { title: "Үр дүн харах", done: false,
