@@ -269,11 +269,6 @@ def handle_validate(conn, job: dict, url: str) -> str:
     last = last_complete_month(exp["date_max"])
     sp = make_splits(last, proto["val_months"], proto["test_months"], proto["train_min_months"])
     vid = exp["dataset_version_id"]
-    if exp["target"] == "demand":
-        has_inv = conn.execute("SELECT 1 FROM curated.inventory_snapshot WHERE dataset_version_id=%s LIMIT 1",
-                               (vid,)).fetchone()
-        if not has_inv:
-            raise JobError("Эрэлт таамаглахад нөөцийн файл хэрэгтэй")
 
     # 1. Цувааны дэд багц (FR-D9): дүрэм, seed бүртгэгдэнэ. Өдрийн цуваанаас сарын цуваа (2.1).
     set_progress(url, job["id"], stage="Өгөгдөл бэлтгэж байна")
