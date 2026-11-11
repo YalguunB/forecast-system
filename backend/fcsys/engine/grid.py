@@ -8,15 +8,23 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-DAY_STATES = ["sold", "open_no_sale", "stockout", "sold_out", "closed", "missing", "unknown"]
+DAY_STATES = ["sold", "open_no_sale", "stockout", "sold_out", "stockout_est", "closed", "missing", "unknown"]
+
+# Нөөцийн файлгүй үед нөөц тасалдлыг борлуулалтаас тооцоолох (stockout_est).
+# Өмнөх EST_WINDOW хоногт борлуулалтгүй өдрийн хувь p0 бол k хоног дараалан 0 гарах магадлал ≈ p0^k.
+# Энэ нь EST_P-ээс бага бол «эрэлт байгаагүй» гэхээсээ «бараа байгаагүй» байх магадлал өндөр.
+# Ховор бараанд (p0 их) зөвхөн урт тасалдал тэмдэглэгдэнэ — 0 өдөр ердийн зүйл тул.
+EST_WINDOW = 56
+EST_MIN_OBS = 14
+EST_P = 0.01
 
 # Зорилтод орох эсэх (Хүснэгт 3.8-ын сүүлийн багана). None = зорилтоос хасна (NaN).
 TARGET_RULES = {
-    "sales":  {"sold": "qty", "sold_out": "qty", "open_no_sale": 0.0, "stockout": 0.0, "unknown": 0.0,
+    "sales":  {"sold": "qty", "sold_out": "qty", "open_no_sale": 0.0, "stockout": 0.0, "stockout_est": 0.0, "unknown": 0.0,
                "closed": None, "missing": None},
     # Эрэлт D: нөөцгүй өдөр халхлагдсан (censored) тул ажиглагдсан утга эрэлт биш → хасна.
     # sold_out: өдөртөө бүгд зарагдсан → борлуулалт нь эрэлтийн доод хязгаар (хэсэгчлэн халхлагдсан) → хасна.
-    "demand": {"sold": "qty", "sold_out": None, "open_no_sale": 0.0, "stockout": None, "unknown": 0.0,
+    "demand": {"sold": "qty", "sold_out": None, "open_no_sale": 0.0, "stockout": None, "stockout_est": None, "unknown": 0.0,
                "closed": None, "missing": None},
 }
 
@@ -111,6 +119,7 @@ def build_daily(tx: pd.DataFrame, date_max: pd.Timestamp,
             closed = pd.notna(is_open) & (is_open == False)  # noqa: E712
             state[no_sale & closed] = "closed"
             # салбар нээлттэй гэж батлагдсан ч бүх бүтээгдэхүүн гүйлгээгүй → бүртгэл дутуу хэвээр
+        estimate_stockouts(state, net.values)
         f["day_state"] = state
         f["product_id"] = pid
         f["branch_id"] = bid
@@ -118,6 +127,35 @@ def build_daily(tx: pd.DataFrame, date_max: pd.Timestamp,
         frames.append(f[["product_id", "branch_id", "unit", "day", "sales_qty", "returns_qty",
                          "sales_amount", "day_state"]])
     return pd.concat(frames, ignore_index=True)
+
+
+def estimate_stockouts(state: np.ndarray, qty: np.ndarray) -> None:
+    """«Тодорхойгүй» (нөөцийн мэдээлэлгүй, борлуулалтгүй) өдрүүдийн дараалсан хэсгийг шалгаж, бараа ердийн
+    хурдаараа зарагддаг байхад ийм урт тасалдал санамсаргүй гарах магадлал EST_P-ээс бага бол
+    «stockout_est» болгоно. state-ийг шууд өөрчилнө."""
+    thresh = np.log(1 / EST_P)
+    n, i = len(state), 0
+    while i < n:
+        if state[i] != "unknown":
+            i += 1
+            continue
+        j = i
+        while j < n and state[j] == "unknown":
+            j += 1
+        lo = max(0, i - EST_WINDOW)
+        win = state[lo:i]
+        obs = (win == "sold") | (win == "unknown") | (win == "open_no_sale") | (win == "sold_out")
+        if obs.sum() >= EST_MIN_OBS:
+            # Борлуулалтгүй өдрийн давтамж p0 (Лапласын засвартай). Тоо ширхгийн дундаж биш: нэг захиалга олон
+            # ширхэгтэй бол (онлайн дэлгүүр) 0 өдөр ердийн зүйл — ширхгээр тооцоход хуурамч тасалдал олон гардаг.
+            zeros = int(((win == "unknown") | (win == "open_no_sale")).sum())
+            p0 = (zeros + 1) / (int(obs.sum()) + 2)
+            if (j - i) * np.log(1 / p0) >= thresh:
+                state[i:j] = "stockout_est"
+                # Тасалдлын өмнөх өдөр бараа өдөртөө дууссан байх магадлалтай: борлуулалт нь эрэлтийн доод хязгаар
+                if i > 0 and state[i - 1] == "sold":
+                    state[i - 1] = "sold_out"
+        i = j
 
 
 def target_series(daily: pd.DataFrame, target: str) -> pd.Series:

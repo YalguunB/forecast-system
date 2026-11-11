@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-DAY_LABELS = {"open_no_sale": "нээлттэй", "stockout": "нөөцгүй", "sold_out": "дууссан", "closed": "хаалттай",
+DAY_LABELS = {"open_no_sale": "нээлттэй", "stockout": "нөөцгүй", "sold_out": "дууссан", "stockout_est": "нөөцгүй бололтой", "closed": "хаалттай",
               "missing": "бүртгэлгүй", "unknown": "тодорхойгүй"}
 
 MIN_SERIES_DAYS = 330          # DQ-09, §2.5.5

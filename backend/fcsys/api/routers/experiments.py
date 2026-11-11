@@ -109,11 +109,7 @@ def create_experiment(body: ExperimentIn, conn=Depends(get_conn, scope="function
     proto = _protocol(body.protocol)
     if branch_scope(user) is not None:           # менежер: зөвхөн өөрийн салбарын цуваа
         proto["sample"]["branches"] = branch_scope(user)
-    if body.target == "demand" and not conn.execute(
-            "SELECT 1 FROM curated.inventory_snapshot WHERE dataset_version_id=%s AND reliability='reliable' LIMIT 1",
-            (body.dataset_version_id,)).fetchone():
-        raise ApiError(422, "demand_requires_inventory",
-                       "Эрэлт таамаглахад нөөцийн файл хэрэгтэй. Өгөгдөл оруулахдаа нөөцийн файлыг хамт оруулна уу.")
+    # Эрэлт нөөцийн файлгүй ч болно: тэр үед нөөц тасалдлыг борлуулалтаас тооцоолно (grid.estimate_stockouts)
     row = conn.execute("INSERT INTO experiment.experiment (name, dataset_version_id, target, protocol, created_by) "
                        "VALUES (%s,%s,%s,%s,%s) RETURNING *",
                        (body.name, body.dataset_version_id, body.target, jsonb(proto), user["id"])).fetchone()

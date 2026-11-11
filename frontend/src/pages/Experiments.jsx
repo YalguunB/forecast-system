@@ -19,8 +19,8 @@ function List() {
   const defaults = useLoad(() => api.get(`/experiments/defaults${vid ? `?dataset_version_id=${vid}` : ""}`), [vid]);
   const models = form.models ?? [...new Set(defaults.data?.protocol.models.map((m) => m.name) ?? [])];
   const P = defaults.data?.protocol, info = defaults.data?.data;
-  // Нөөцийн файл байвал эрэлтийг анхдагчаар сонгоно (системийн гол зорилго), байхгүй бол борлуулалт
-  const target = form.target ?? (info?.has_inventory ? "demand" : "sales");
+  // Эрэлт бол системийн гол зорилго: нөөцийн файлгүй үед бараа дууссан өдрийг борлуулалтаас тооцоолно
+  const target = form.target ?? "demand";
 
   const create = async () => {
     setErr(null);
@@ -75,10 +75,10 @@ function List() {
               Бараагаар таамаглал найдвартай биш байж магадгүй. Ангиллаар таамаглуулбал илүү найдвартай.</div>)}
           <label htmlFor="t" style={{ marginTop: 8 }}>Юуг таамаглах <Help k="sales_vs_demand" /></label>
           <select id="t" value={target} onChange={(e) => setForm({ ...form, target: e.target.value })}>
-            <option value="demand" disabled={info && !info.has_inventory}>Эрэлт{info && !info.has_inventory ? " (нөөцийн файл хэрэгтэй)" : ""}</option>
+            <option value="demand">Эрэлт</option>
             <option value="sales">Борлуулалт</option>
           </select>
-          {info && !info.has_inventory && <p className="small muted" style={{ margin: "0.25rem 0 0" }}>Нөөцийн файл оруулаагүй тул борлуулалтыг таамаглана.</p>}
+          {info && !info.has_inventory && target === "demand" && <p className="small muted" style={{ margin: "0.25rem 0 0" }}>Нөөцийн файл алга. Бараа дууссан өдрүүдийг борлуулалтаас тооцоолно.</p>}
           <details style={{ marginTop: 10 }}>
           <summary className="small">Нэмэлт тохиргоо</summary>
           <div className="row" style={{ marginTop: 8 }}>

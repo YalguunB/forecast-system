@@ -95,3 +95,26 @@ def test_demand_month_corrected_for_stockout_and_sold_out_days():
     d = build_monthly(daily, "demand", pd.Timestamp("2024-01-31"))
     assert s["y"].iloc[0] == 254.0                                  # бодит борлуулалт
     assert abs(d["y"].iloc[0] - 310.0) < 1e-9                       # 25 бүтэн өдөр × 10 = 250 → ×31/25 = 310
+
+
+def test_stockout_estimated_without_inventory():
+    """Нөөцийн файлгүй: өдөрт ~10 зарагддаг бараа 5 хоног 0 → «нөөцгүй бололтой»; ховор бараанд 0 өдөр хэвийн."""
+    days = pd.date_range("2024-01-01", "2024-03-31")
+    rows = []
+    for i, d in enumerate(days):
+        if not (60 <= i < 65):
+            rows.append((d, "FAST", 10.0))                        # 60–64-р өдөр зарагдаагүй
+        if i % 9 == 0:
+            rows.append((d, "SLOW", 1.0))                         # 9 хоногт нэг удаа
+        rows.append((d, "Z", 1.0))                                # салбар өдөр бүр ажилласан
+    tx = pd.DataFrame(rows, columns=["txn_date", "product_ext_id", "qty"]).assign(
+        branch_ext_id="B", unit="ш", amount=1.0, is_return=False)
+    daily = grid.build_daily(tx, pd.Timestamp("2024-03-31"))
+    fast = daily[daily.product_id == "FAST"].set_index("day").day_state
+    assert (fast.iloc[60:65] == "stockout_est").all() and (fast == "stockout_est").sum() == 5
+    assert fast.iloc[59] == "sold_out"                            # тасалдлын өмнөх өдөр дууссан бололтой
+    assert not (daily[daily.product_id == "SLOW"].day_state == "stockout_est").any()
+    from fcsys.engine.monthly import build_monthly
+    m = build_monthly(daily[daily.product_id == "FAST"], "demand", pd.Timestamp("2024-03-31"))
+    assert abs(m.loc["2024-03-01", "y"] - 310.0) < 1e-9             # 26 өдөр × 10 → ×31/26 = 310
+    assert abs(m.loc["2024-02-01", "y"] - 290.0) < 1e-9             # 2-29 «дууссан» ч бүтэн 10 → өөрчлөгдөхгүй

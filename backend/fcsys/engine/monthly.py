@@ -78,7 +78,7 @@ def build_monthly(daily: pd.DataFrame, target: str, date_max) -> pd.DataFrame:
     m = d["day"].dt.to_period("M").dt.to_timestamp()
     state = d["day_state"].values
     qty = d["sales_qty"].astype(float).values
-    stock = state == "stockout"
+    stock = (state == "stockout") | (state == "stockout_est")
     soldout = state == "sold_out"
     frame = pd.DataFrame({"m": m.values, "qty": qty, "gap": np.isin(state, GAP_STATES), "stock": stock,
                           "soldout": soldout, "qty_full": np.where(stock | soldout, 0.0, qty)})
