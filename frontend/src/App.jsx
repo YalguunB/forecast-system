@@ -17,7 +17,7 @@ const SCREENS = [
   { path: "import", n: 1, title: "Өгөгдөл оруулах", roles: ["manager"], el: Import },
   { path: "quality", n: 2, title: "Өгөгдөл шалгах", roles: ["executive", "manager"], el: Quality },
   { path: "experiments", n: 3, title: "Таамаглал гаргуулах", roles: ["manager"], el: Experiments },
-  { path: "forecast", n: 4, title: "Бүтээгдэхүүний таамаглал", roles: ["executive", "manager"], el: Forecast },
+  { path: "forecast", n: 4, title: "Барааны таамаглал", roles: ["executive", "manager"], el: Forecast },
   { path: "reports", title: "Тайлан", roles: ["executive", "manager"], el: Reports },
   { path: "compare", title: "Аргуудын харьцуулалт", roles: ["executive", "manager"], el: Compare },
   { path: "admin", title: "Хэрэглэгч ба эрх", roles: ["admin"], el: Admin },
@@ -50,7 +50,7 @@ export default function App() {
   return (
     <div className="shell">
       <nav className="rail" aria-label="Үндсэн цэс">
-        <div className="brand">Таамаглалын систем<span>Сар, улирал, жилийн таамаглал</span></div>
+        <div className="brand">Таамаглалын систем</div>
         {visible.map((x) => (
           <a key={x.path} href={`#/${x.path}`} className={x === screen ? "active" : ""}
              aria-current={x === screen ? "page" : undefined}>

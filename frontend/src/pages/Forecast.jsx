@@ -2,9 +2,9 @@ import { useMemo, useState } from "react";
 import { api } from "../api.js";
 import { go } from "../App.jsx";
 import { ErrorNote, Help, Intro, Loading, Plot, plotLayout, useLoad } from "../components.jsx";
-import { HORIZONS, PERIOD, PERIOD_LONG, STATES, accuracyLevel, fmt, monthLabel, seriesLabel, MODEL_LABELS } from "../labels.js";
+import { HORIZONS, PERIOD, PERIOD_LONG, STATES, accuracyLevel, fmt, monthLabel, seriesLabel, MODEL_LABELS, PERIOD_OF } from "../labels.js";
 
-const METRIC_LABELS = { WAPE: "Сарын алдаа, %", SUM_APE: "Нийт дүнгийн алдаа, %", MAE: "Сарын дундаж алдаа", Bias: "Хэлбийлт",
+const METRIC_LABELS = { WAPE: "Сарын алдаа, %", SUM_APE: "Нийт дүнгийн алдаа, %", MAE: "Дундаж зөрүү", Bias: "Хазайлт",
   SUM_AE: "Нийт дүнгийн зөрүү", COVERAGE: "Хүрээнд багтсан", RMSE: "RMSE", MASE: "MASE", RMSSE: "RMSSE", WIDTH: "Хүрээний өргөн", PINBALL: "Pinball" };
 const PCT = new Set(["WAPE", "SUM_APE", "COVERAGE"]);
 
@@ -27,21 +27,20 @@ export default function Forecast({ params, user }) {
   const [adjDate, setAdjDate] = useState(null);
 
   if (exps.loading) return <Loading />;
-  if (!done.length) return (<><h1>Бүтээгдэхүүний таамаглал</h1><Intro><p>Бэлэн таамаглал алга. Менежер 3 алхмыг дуусгасны дараа энд харагдана.</p></Intro></>);
+  if (!done.length) return (<><h1>Барааны таамаглал</h1><Intro><p>Бэлэн таамаглал алга.</p></Intro></>);
   const f = fc.data;
   const list = (series.data || []).filter((s) => !q || seriesLabel(s).toLowerCase().includes(q.toLowerCase()) || (s.product_category || "").toLowerCase().includes(q.toLowerCase()));
   return (
     <>
-      <h1>Бүтээгдэхүүний таамаглал</h1>
-      <p className="muted">Бүтээгдэхүүнээ сонгож, сарын, улирлын эсвэл жилийн таамаглалыг харна.</p>
+      <h1>Барааны таамаглал</h1>
       <div className="row" style={{ marginBottom: "1rem" }}>
         <div className="grow"><label htmlFor="e">Таамаглал</label>
           <select id="e" value={eid} onChange={(e) => go("forecast", { experiment: e.target.value })}>
-            {done.map((e) => <option key={e.id} value={e.id}>{e.name} — {e.target_label}</option>)}
+            {done.map((e) => <option key={e.id} value={e.id}>{e.name} ({e.target_label.toLowerCase()})</option>)}
           </select></div>
-        <div className="grow"><label htmlFor="s">Бүтээгдэхүүн</label>
+        <div className="grow"><label htmlFor="s">Бараа</label>
           <div className="row" style={{ gap: 6, flexWrap: "nowrap" }}>
-            <input aria-label="Бүтээгдэхүүн хайх" placeholder="Хайх…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 120 }} />
+            <input aria-label="Бараа хайх" placeholder="Хайх…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 120 }} />
             <select id="s" value={sid || ""} onChange={(e) => nav({ series: e.target.value, origin: undefined, run: undefined })}>
               {list.map((s) => <option key={s.series_id} value={s.series_id}>{seriesLabel(s)}{s.product_category ? ` · ${s.product_category}` : ""}</option>)}
             </select>
@@ -52,7 +51,7 @@ export default function Forecast({ params, user }) {
           </div></div>
         <div><label htmlFor="sp">Харах</label>
           <select id="sp" value={split} onChange={(e) => nav({ split: e.target.value, origin: undefined, run: undefined })}>
-            <option value="live">Ирээдүйн таамаглал</option><option value="test">Өнгөрсөнд хэр зөв байсныг шалгах</option>
+            <option value="live">Ирээдүй</option><option value="test">Өнгөрсөнтэй харьцуулах</option>
           </select></div>
       </div>
       <ErrorNote error={fc.error} />
@@ -60,27 +59,28 @@ export default function Forecast({ params, user }) {
         <>
           <div className="target-banner" aria-label="Таамаглалын тодорхойлолт">
             <span className="target">{f.target_label}</span>
-            <span className="fact">Бүтээгдэхүүн <b>{seriesLabel(f.series)}</b></span>
+            <span className="fact">Бараа <b>{seriesLabel(f.series)}</b></span>
             {f.series.product_category && <span className="fact">Ангилал <b>{f.series.product_category}</b></span>}
             <span className="fact">Нэгж <b>{f.unit}</b></span>
             <span className="fact">Сүүлийн бүтэн сар <Help k="origin" /> <b>{monthLabel(f.origin_date)}</b></span>
             <span className="fact">Хугацаа <b>{PERIOD[f.horizon]} ({f.horizon} сар)</b></span>
             <span className="fact">Арга <b>{MODEL_LABELS[f.model] || f.model}</b></span>
-            <span className="fact" style={{ flexBasis: "100%" }}>Зарагдах хэмжээ — нөөц дууссан өдрүүдэд алдагдсан эрэлтийг оруулаагүй</span>
-            <span className="fact" title="Мөшгих дугаар (run_id) — техникийн тайланд хэрэгтэй" style={{ opacity: 0.7 }}>№ {f.run_id}</span>
+            <span className="fact" style={{ flexBasis: "100%" }}>{f.target === "demand"
+              ? "Нөөц тасарсан өдрүүдийн алдагдсан борлуулалтыг нэмж тооцсон."
+              : "Зарагдах тоо. Нөөц тасарснаас алдагдсан борлуулалт ороогүй."}</span>
           </div>
           {split === "live" && <Summary f={f} />}
-          {split === "test" && <Intro><p>Таамаглалыг бодит борлуулалттай харьцуулна. Шугамууд ойр байх тусам таамаглал зөв.
-            {f.period_total.actual !== null && <> Энэ эхлэлээс {PERIOD_LONG[f.horizon]}-ын нийт: таамаглал <b>{fmt(f.period_total.forecast, 0)}</b>, бодит <b>{fmt(f.period_total.actual, 0)}</b> {f.unit}.</>}</p></Intro>}
+          {split === "test" && <Intro><p>Шугамууд ойр байх тусам таамаглал зөв.
+            {f.period_total.actual !== null && <> Нийт: таамаглал <b>{fmt(f.period_total.forecast, 0)}</b>, бодит <b>{fmt(f.period_total.actual, 0)}</b> {f.unit}.</>}</p></Intro>}
           {split === "test" && (
             <div className="row" style={{ marginBottom: "0.5rem" }}>
-              <div><label htmlFor="o">Сүүлийн мэдэгдэх сар</label>
+              <div><label htmlFor="o">Эхлэх сар</label>
                 <select id="o" value={f.origin_date} onChange={(e) => nav({ origin: e.target.value })}>
                   {f.origins.map((o) => <option key={o} value={o}>{monthLabel(o, true)}</option>)}
                 </select></div>
               <div><label htmlFor="r">Арга</label>
                 <select id="r" value={f.run_id} onChange={(e) => nav({ run: e.target.value })}>
-                  {f.available_runs.map((r) => <option key={r.run_id} value={r.run_id}>{MODEL_LABELS[r.model] || r.model}{r.role === "baseline" ? " (суурь)" : " — сонгосон"}</option>)}
+                  {f.available_runs.map((r) => <option key={r.run_id} value={r.run_id}>{MODEL_LABELS[r.model] || r.model}{r.role === "baseline" ? " (энгийн арга)" : " (сонгосон)"}</option>)}
                 </select></div>
             </div>
           )}
@@ -88,8 +88,8 @@ export default function Forecast({ params, user }) {
             <div className="panel">
               <ForecastChart f={f} />
               {f.interval.available
-                ? <p className="small muted">Цэнхэр зурвас нь 80%-ийн хүрээ <Help k="interval" />. Улирал, жилийн нийлбэрт оруулахгүй.</p>
-                : <p className="small muted">Энэ арга хүрээ гаргадаггүй.</p>}
+                ? <p className="small muted">Сүүдэртэй зурвас: 80%-ийн хүрээ <Help k="interval" /></p>
+                : null}
               <MonthTable f={f} onAdjust={isManager && split === "live" ? (d) => { setAdjDate(d); document.getElementById("adjust")?.scrollIntoView({ behavior: "smooth", block: "center" }); } : null} />
             </div>
             <div>
@@ -99,14 +99,12 @@ export default function Forecast({ params, user }) {
               {f.adjusted.length > 0 && (
                 <div className="panel small">
                   <h3 style={{ marginTop: 0 }}>Гараар хийсэн засвар</h3>
-                  <p className="muted">Гараар хийсэн засварыг улбар шар ромбоор харуулна. Анхны таамаглал хадгалагдана.</p>
-                  {f.adjusted.map((a) => <div key={a.target_date}>{monthLabel(a.target_date)}: {fmt(a.original_value)} → <b>{fmt(a.adjusted_value)}</b> — {a.reason} ({a.username})</div>)}
+                  {f.adjusted.map((a) => <div key={a.target_date}>{monthLabel(a.target_date)}: {fmt(a.original_value, 0)} → <b>{fmt(a.adjusted_value, 0)}</b>. {a.reason} ({a.username})</div>)}
                 </div>
               )}
               {canExport && (
                 <div className="panel">
-                  <h3 style={{ marginTop: 0 }}>Татаж авах</h3>
-                  <p className="small muted">Сар бүрийн таамаглал болон нийт дүнг нэг файлаар татна.</p>
+                  <h3 style={{ marginTop: 0 }}>Татах</h3>
                   <div className="row">
                     <button className="quiet" onClick={() => api.download(`/export/forecasts?experiment_id=${eid}&split=${split}&format=xlsx`, `forecast_exp${eid}_${split}.xlsx`)}>Excel татах</button>
                     <button className="quiet" onClick={() => api.download(`/export/forecasts?experiment_id=${eid}&split=${split}&format=csv`, `forecast_exp${eid}_${split}.csv`)}>CSV татах</button>
@@ -137,17 +135,20 @@ function Summary({ f }) {
   const acc = accuracyLevel(sel?.value, base?.value);
   const better = sel?.value != null && base?.value ? 1 - sel.value / base.value : null;
   const first = f.forecast[0]?.target_date, last = f.forecast[f.forecast.length - 1]?.target_date;
+  const ys = f.forecast.map((p) => p.y_hat).filter((v) => v != null);
+  const flat = ys.length > 1 && Math.max(...ys) - Math.min(...ys) <= 0.005 * Math.max(...ys, 1);
   return (
     <div className="summary">
       <div className="big">{fmt(total, 0)}<small>{f.unit}, {PERIOD_LONG[k]}</small></div>
       <div>
-        <p><b>{seriesLabel(f.series)}</b> {k === 1 ? <>{monthLabel(first, true)}-д</> : <>{monthLabel(first)}–{monthLabel(last)} хугацаанд</>} нийт <b>{fmt(total, 0)} {f.unit}</b> орчим
-          {k > 1 && <> (сард дунджаар {fmt(total / k, 0)})</>} зарагдана гэж таамаглаж байна.
-          {change !== null && <> Өмнөх оны ижил үетэй харьцуулахад <b>{change >= 0 ? "+" : ""}{(change * 100).toFixed(0)}%</b>.</>}
-          {f.period_total.adjusted != null && <> (гараар засварыг тооцсон; загварын анхны дүн {fmt(f.period_total.forecast, 0)})</>}</p>
+        <p><b>{seriesLabel(f.series)}</b> {k === 1 ? <>{monthLabel(first, true)}-д</> : <>{monthLabel(first)} – {monthLabel(last)} хооронд</>} <b>{fmt(total, 0)} {f.unit}</b> орчим
+          {f.target === "demand" ? " эрэлттэй байна" : " зарагдана"}{k > 1 && <> (сард {fmt(total / k, 0)})</>}.
+          {change !== null && <> Өнгөрсөн оны мөн үеэс <b>{change >= 0 ? "+" : ""}{(change * 100).toFixed(0)}%</b>.</>}
+          {f.period_total.adjusted != null && <> Таны засвартай. Анхны таамаглал {fmt(f.period_total.forecast, 0)}.</>}</p>
+        {flat && <p className="small muted">Улирлын хэлбэлзэл илрээгүй тул сар бүр ижил түвшин таамагласан.</p>}
         <p>Найдвартай байдал: <span className={`grade ${acc.tone}`}>{acc.label}</span> {acc.text}
-          {better !== null && better > 0 && <> Энгийн аргаас алдаа <b>{(better * 100).toFixed(0)}%</b> бага.</>}
-          {period?.value != null && k > 1 && <> {PERIOD[k]}ын нийт дүнгийн алдаа дунджаар <b>{(period.value * 100).toFixed(0)}%</b>.</>} <Help k="WAPE" /></p>
+          {better !== null && better > 0 && <> Энгийн аргаас <b>{(better * 100).toFixed(0)}%</b> бага алддаг.</>}
+          {period?.value != null && k > 1 && <> {PERIOD_OF[k]} нийт дүнгийн алдаа <b>{(period.value * 100).toFixed(0)}%</b>.</>} <Help k="WAPE" /></p>
       </div>
     </div>
   );
@@ -210,11 +211,11 @@ function MonthTable({ f, onAdjust }) {
             <tr key={p.target_date}><td>{monthLabel(p.target_date, true)}</td><td className="num">{fmt(p.y_hat, 0)}</td>
               {f.interval.available && <td className="num small">{fmt(p.q_lo, 0)} – {fmt(p.q_hi, 0)}</td>}
               {f.adjusted.length > 0 && <td className="num">{adj[p.target_date] !== undefined ? fmt(adj[p.target_date], 0) : ""}</td>}
-              {hasAct && <td className="num">{act[p.target_date] === null ? <span title="тодорхойгүй сар">—</span> : fmt(act[p.target_date], 0)}</td>}
+              {hasAct && <td className="num">{act[p.target_date] === null ? <span title="тодорхойгүй">—</span> : fmt(act[p.target_date], 0)}</td>}
               {onAdjust && <td style={{ textAlign: "right" }}><button className="quiet mini" onClick={() => onAdjust(p.target_date)}>{adj[p.target_date] !== undefined ? "Дахин засах" : "+ Засах"}</button></td>}</tr>))}
           {f.forecast.length > 1 && (
-            <tr className="total"><td><b>{PERIOD[f.horizon]}ын нийт</b></td><td className="num"><b>{fmt(f.period_total.forecast, 0)}</b></td>
-              {f.interval.available && <td className="num small muted">нэмэхгүй</td>}
+            <tr className="total"><td><b>{PERIOD_OF[f.horizon]} нийт</b></td><td className="num"><b>{fmt(f.period_total.forecast, 0)}</b></td>
+              {f.interval.available && <td className="num small muted" />}
               {f.adjusted.length > 0 && <td className="num"><b>{fmt(f.period_total.adjusted, 0)}</b></td>}
               {hasAct && <td className="num"><b>{fmt(f.period_total.actual, 0)}</b></td>}{onAdjust && <td />}</tr>)}
         </tbody>
@@ -233,23 +234,23 @@ function Metrics({ f }) {
   const wS = v("WAPE"), wB = v("WAPE", "base"), mae = v("MAE"), bias = v("Bias"), sum = v("SUM_APE");
   const lines = [];
   if (wS != null && wB != null) lines.push(wS <= wB
-    ? ["ok", "Энгийн аргаас сайн", `«Сүүлийн 3 сарын дундаж» аргаас ${Math.round((1 - wS / wB) * 100)}% бага алддаг.`]
-    : ["warn", "Энгийн аргаас муу", `Энгийн аргаас ${Math.round((wS / wB - 1) * 100)}% их алддаг — болгоомжтой ашиглана уу.`]);
-  if (mae != null) lines.push(["info", "Сарын зөрүү", `Нэг сарын таамаглал дунджаар ±${fmt(mae, 0)} ${f.unit} зөрдөг.`]);
-  if (sum != null && f.horizon > 1) lines.push(["info", `${PERIOD[f.horizon]}ын нийт`, `${PERIOD[f.horizon]}ын нийт дүн дунджаар ${(sum * 100).toFixed(0)}% зөрдөг.`]);
+    ? ["ok", "Энгийн аргаас сайн", `Энгийн аргаас ${Math.round((1 - wS / wB) * 100)}% бага алддаг.`]
+    : ["warn", "Энгийн аргаас муу", `Энгийн аргаас ${Math.round((wS / wB - 1) * 100)}% их алддаг. Болгоомжтой ашиглана уу.`]);
+  if (mae != null) lines.push(["info", "Сарын зөрүү", `Сард дунджаар ±${fmt(mae, 0)} ${f.unit}.`]);
+  if (sum != null && f.horizon > 1) lines.push(["info", `${PERIOD_OF[f.horizon]} нийт`, `Дунджаар ${(sum * 100).toFixed(0)}% зөрдөг.`]);
   if (bias != null && mae) {
     const r = bias / mae;
-    lines.push(["info", "Хандлага", Math.abs(r) < 0.2 ? "Илүү ч, дутуу ч таамаглах хандлагагүй." : r > 0 ? "Бодитоос илүү таамаглах хандлагатай." : "Бодитоос дутуу таамаглах хандлагатай."]);
+    lines.push(["info", "Хазайлт", Math.abs(r) < 0.2 ? "Илүү, дутуу таамагладаггүй." : r > 0 ? "Ихэвчлэн илүү таамагладаг." : "Ихэвчлэн дутуу таамагладаг."]);
   }
   return (
     <div className="panel">
       <h3 style={{ marginTop: 0 }}>Хэр найдвартай вэ?</h3>
-      <p className="small muted">Сүүлийн 12 сарын таамаглалыг бодит борлуулалттай харьцуулна.</p>
+      <p className="small muted">Өнгөрсөн 12 сараар шалгасан.</p>
       <ul className="attn">{lines.map(([tone, tag, text]) => (
         <li key={tag}><span className={`badge ${tone}`}>{tag}</span><div className="what"><span style={{ color: "var(--ink)" }}>{text}</span></div></li>))}
       </ul>
       <details style={{ marginTop: 8 }}>
-        <summary className="small muted">Тоон үзүүлэлтүүд</summary>
+        <summary className="small muted">Дэлгэрэнгүй</summary>
         <table>
           <thead><tr><th>Үзүүлэлт</th><th className="num">Сонгосон арга</th><th className="num">Энгийн арга <Help k="baseline" /></th></tr></thead>
           <tbody>{order.map((k) => (
@@ -277,9 +278,9 @@ function ValueAdded({ eid }) {
     <div className="panel small">
       <h3 style={{ marginTop: 0 }}>Таны засвар тус болсон уу?</h3>
       {d.fva_mae == null
-        ? <p className="muted" style={{ margin: 0 }}>{d.n_adjustments} засвар хийсэн. Шинэ бодит мэдээлэл орсны дараа үр дүнг харуулна.</p>
+        ? <p className="muted" style={{ margin: 0 }}>{d.n_adjustments} засвар хийсэн. Бодит борлуулалт ирсний дараа харагдана.</p>
         : <p style={{ margin: 0 }}><span className={`badge ${d.fva_mae > 0 ? "ok" : "warn"}`}>{d.fva_mae > 0 ? "Тус болсон" : "Тус болоогүй"}</span>{" "}
-            Таны {d.n_pairs} засвар сарын алдааг дунджаар <b>{fmt(Math.abs(d.fva_mae), 1)}</b>-ээр {d.fva_mae > 0 ? "бууруулсан" : "нэмэгдүүлсэн"} (системийн алдаа {fmt(d.mae_model, 1)} → засвартай {fmt(d.mae_adjusted, 1)}).</p>}
+            Таны {d.n_pairs} засвар алдааг дунджаар <b>{fmt(Math.abs(d.fva_mae), 1)}</b>-ээр {d.fva_mae > 0 ? "бууруулсан" : "нэмэгдүүлсэн"}.</p>}
     </div>
   );
 }
@@ -291,23 +292,23 @@ function Adjust({ f, date, setDate, onSaved }) {
   const orig = f.forecast.find((p) => p.target_date === date)?.y_hat;
   return (
     <div className="panel" id="adjust">
-      <h3 style={{ marginTop: 0 }}>Таамаглалыг гараар засах</h3>
-      <p className="small muted">Системд ороогүй шалтгааныг бичнэ. Анхны таамаглал хадгалагдана.</p>
+      <h3 style={{ marginTop: 0 }}>Гараар засах</h3>
+      <p className="small muted">Урамшуулал гэх мэт системд ороогүй шалтгаан байвал засна.</p>
       <label htmlFor="ad">Сар</label>
       <select id="ad" value={date} onChange={(e) => setDate(e.target.value)}>
-        {f.forecast.map((p) => <option key={p.target_date} value={p.target_date}>{monthLabel(p.target_date, true)} — систем {fmt(p.y_hat, 0)}</option>)}
+        {f.forecast.map((p) => <option key={p.target_date} value={p.target_date}>{monthLabel(p.target_date, true)} ({fmt(p.y_hat, 0)})</option>)}
       </select>
-      <label htmlFor="av" style={{ marginTop: 8 }}>Залруулсан утга ({f.unit})</label>
+      <label htmlFor="av" style={{ marginTop: 8 }}>Шинэ утга ({f.unit})</label>
       <input id="av" type="number" min="0" step="any" value={value} onChange={(e) => setValue(e.target.value)} placeholder={fmt(orig, 0)} />
       <label htmlFor="ar" style={{ marginTop: 8 }}>Шалтгаан</label>
-      <input id="ar" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Жишээ: урамшуулал төлөвлөсөн" />
+      <input id="ar" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Жишээ: урамшуулалтай" />
       <button className="warn" style={{ marginTop: 8 }} disabled={value === "" || reason.trim().length < 3} onClick={async () => {
         setErr(null);
         try {
           await api.post("/adjustments", { run_id: f.run_id, series_id: f.series.id, target_date: date, adjusted_value: Number(value), reason });
           setValue(""); setReason(""); onSaved();
         } catch (x) { setErr(x); }
-      }}>Засвар хадгалах</button>
+      }}>Хадгалах</button>
       <ErrorNote error={err} />
     </div>
   );
@@ -323,11 +324,10 @@ function Explain({ runId, sid, horizon }) {
   })).filter((r) => r.wape);
   return (
     <>
-      <h2>Сар бүрийн эхлэлийн алдаа</h2>
+      <h2>Сар бүрийн алдаа</h2>
       <div className="panel table-wrap">
-        <p className="small muted">Таамаглалын алдааг өдрийн төлөвтэй харьцуулна. {ex.data.feature_behaviour.note}</p>
         <table>
-          <thead><tr><th>Сүүлийн мэдэгдэх сар</th><th className="num">Сарын алдаа, %</th><th className="num">Нийт дүнгийн зөрүү</th><th>Зорилтот хугацааны өдрийн төлөв</th></tr></thead>
+          <thead><tr><th>Эхлэх сар</th><th className="num">Сарын алдаа</th><th className="num">Нийт зөрүү</th><th>Өдрүүд</th></tr></thead>
           <tbody>{rows.map((r) => (
             <tr key={r.origin_date}><td>{monthLabel(r.origin_date, true)}</td>
               <td className="num" title={r.wape?.undefined_reason || ""}>{r.wape?.value == null ? "тодорхойгүй" : `${(r.wape.value * 100).toFixed(0)}%`}</td>
@@ -335,7 +335,7 @@ function Explain({ runId, sid, horizon }) {
               <td className="small">{Object.entries(r.states).map(([k, n]) => `${STATES[k].label} ${n}`).join(", ")}</td></tr>))}
           </tbody>
         </table>
-        {ex.data.failures.length > 0 && <div className="notice warn">{ex.data.failures.length} эхлэлд загвар бүтэлгүйтэж {ex.data.failures[0].fallback_model} ажилласан: {ex.data.failures[0].reason}</div>}
+        {ex.data.failures.length > 0 && <div className="notice warn">{ex.data.failures.length} удаа арга ажиллаагүй тул энгийн аргаар таамагласан.</div>}
       </div>
     </>
   );

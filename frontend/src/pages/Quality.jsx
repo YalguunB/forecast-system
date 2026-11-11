@@ -18,13 +18,13 @@ export default function Quality({ params, user }) {
   return (
     <>
       <h1>Өгөгдөл шалгах</h1>
-      <p className="muted">Систем файлыг шалгаад юу олдсон, юу хийсэн, танаас юу хэрэгтэйг доор харуулна.</p>
+      <p className="muted">Файлд олдсон асуудал, систем юу хийснийг харуулна.</p>
       <div className="row" style={{ marginBottom: "1rem" }}>
         <div style={{ minWidth: 320 }}>
-          <label htmlFor="v">Аль файл</label>
+          <label htmlFor="v">Файл</label>
           <select id="v" value={vid || ""} onChange={(e) => go("quality", { version: e.target.value })}>
             {(versions.data || []).map((v) => (
-              <option key={v.id} value={v.id}>{v.dataset} v{v.version_no} — {VERSION_STATUS[v.status]}{v.archived_at ? " (архив)" : ""}</option>
+              <option key={v.id} value={v.id}>{v.dataset} ({v.version_no}) · {VERSION_STATUS[v.status]}{v.archived_at ? " · архив" : ""}</option>
             ))}
           </select>
         </div>
@@ -33,16 +33,16 @@ export default function Quality({ params, user }) {
       {report.loading ? <Loading /> : report.data && (
         <>
           {report.data.usable && fullMonths(report.data.version) < 18
-            ? <div className="status-bar warn" role="status"><b>Алдаа алга, гэхдээ хэт богино</b><p>Энэ файлд {fullMonths(report.data.version)} бүтэн сарын борлуулалт л байна. Таамаглалд дор хаяж 18 сар хэрэгтэй — илүү урт хугацааны файл оруулна уу.</p></div>
+            ? <div className="status-bar warn" role="status"><b>Хугацаа богино</b><p>Энэ файлд {fullMonths(report.data.version)} сарын борлуулалт байна. Дор хаяж 18 сар хэрэгтэй.</p></div>
             : report.data.usable
-            ? <div className="status-bar ok" role="status"><b>✓ Өгөгдөл бэлэн</b><p>Заавал засах алдаа алга. «Таамаглал гаргуулах» хэсэгт ашиглаж болно.{steward ? " Анхааруулгыг дараа ч шийдэж болно." : ""}</p></div>
-            : <div className="status-bar bad" role="status"><b>{report.data.blocking_open} алдаа засагдах хүртэл</b><p>энэ файлаар таамаглал гаргахгүй. Бусад нь зөвхөн мэдээлэл — дараа ч шийдэж болно.</p></div>}
+            ? <div className="status-bar ok" role="status"><b>✓ Өгөгдөл бэлэн</b><p>Таамаглал гаргуулж болно.</p></div>
+            : <div className="status-bar bad" role="status"><b>{report.data.blocking_open} алдаа засах хэрэгтэй</b><p>Засах хүртэл энэ файлыг ашиглахгүй.</p></div>}
           <Counts r={report.data} />
 
-          <h2>Юу олдсон, систем юу хийсэн бэ</h2>
+          <h2>Олдсон асуудал</h2>
           <div className="panel table-wrap">
             <table>
-              <thead><tr><th>Ач холбогдол</th><th>Юу олдсон</th><th className="num">Тоо</th><th>Систем юу хийсэн</th><th>Таны шийдвэр</th></tr></thead>
+              <thead><tr><th>Түвшин</th><th>Асуудал</th><th className="num">Тоо</th><th>Систем юу хийсэн</th><th>Шийдвэр</th></tr></thead>
               <tbody>{[...report.data.by_rule].sort((x, y) => ["blocking", "warning", "info"].indexOf(x.severity) - ["blocking", "warning", "info"].indexOf(y.severity)).map((r, i) => (
                 <tr key={i}>
                   <td><span className={`badge ${r.severity === "blocking" ? "bad" : r.severity === "warning" ? "warn" : "info"}`}>{SEVERITY[r.severity]}</span></td>
@@ -50,16 +50,16 @@ export default function Quality({ params, user }) {
                   <td className="num">{r.n_rows && r.n_rows !== r.n ? <>{fmt(r.n_rows, 0)} мөр<div className="facts-tech">{r.n} бараа</div></> : fmt(r.n, 0)}</td>
                   <td className="small">{RULE_SYSTEM_DID[r.rule_id] || "—"}</td>
                   <td>{r.action === "open"
-                    ? (steward && r.severity !== "info" ? <button className="quiet mini" onClick={() => { setSev(r.severity); document.getElementById("issues")?.scrollIntoView({ behavior: "smooth" }); }}>Шийдэх</button> : <span className="muted small">{r.severity === "info" ? "Шаардлагагүй" : "Хүлээгдэж байна"}</span>)
+                    ? (steward && r.severity !== "info" ? <button className="quiet mini" onClick={() => { setSev(r.severity); document.getElementById("issues")?.scrollIntoView({ behavior: "smooth" }); }}>Шийдэх</button> : <span className="muted small">{r.severity === "info" ? "Шаардлагагүй" : "Шийдээгүй"}</span>)
                     : <span className="small">{ACTIONS[r.action]}</span>}</td>
                 </tr>))}
               </tbody>
             </table>
           </div>
 
-          {steward && (
+          {steward && report.data.by_rule.some((x) => x.severity !== "info" && x.action === "open") && (
             <>
-              <h2 id="issues">Асуудлуудыг нэг бүрчлэн шийдэх</h2>
+              <h2 id="issues">Асуудал шийдэх</h2>
               <div className="tabs" role="tablist">
                 {[["blocking", "Заавал засах"], ["warning", "Анхааруулга"], ["info", "Мэдээлэл"], ["", "Бүгд"]].map(([k, l]) => (
                   <button key={k} role="tab" aria-selected={sev === k} className={sev === k ? "on" : ""} onClick={() => setSev(k)}>{l}</button>
@@ -71,9 +71,9 @@ export default function Quality({ params, user }) {
                 {issues.data && <IssueTable items={issues.data.items} total={issues.data.total} onChange={issues.reload} />}
                 <div className="row" style={{ marginTop: "1rem", alignItems: "center" }}>
                   <button onClick={async () => setJob((await api.post(`/dataset-versions/${vid}/apply`)).job_id)}>
-                    Засвар хэрэглэх
+                    Засварыг хэрэгжүүлэх
                   </button>
-                  <span className="small muted">Таны шийдвэрүүдийг өгөгдөлд тусгана. Анхны файл өөрчлөгдөхгүй.</span>
+                  <span className="small muted">Анхны файл өөрчлөгдөхгүй.</span>
                 </div>
                 {job && <JobProgress jobId={job} onDone={() => { report.reload(); issues.reload(); }} />}
               </div>
@@ -81,7 +81,7 @@ export default function Quality({ params, user }) {
           )}
 
           <h2>Бараа бүрийн өдрүүд <Help k="day_state" /></h2>
-          <p className="small muted">Мөр дээр дарж тухайн барааны өдөр бүрийн төлвийг календарь дээр харна. Асуудал ихтэй нь эхэнд.</p>
+          <p className="small muted">Бараа дээр дарж өдөр бүрийг харна.</p>
           <SeriesTable rows={report.data.by_series} onPick={setSeries} picked={series} />
           {series && <DayCalendar vid={vid} s={series} />}
         </>
@@ -100,17 +100,17 @@ function BulkDecide({ vid, items, onDone }) {
   const r = rule || rules[0];
   return (
     <div className="row" style={{ marginBottom: "1rem", alignItems: "flex-end" }}>
-      <div><label htmlFor="br">Ижил төрлийн бүх асуудлыг нэг дор</label>
+      <div><label htmlFor="br">Ижил асуудлыг нэг дор шийдэх</label>
         <select id="br" value={r} onChange={(e) => setRule(e.target.value)}>{rules.map((x) => <option key={x} value={x}>{RULE_PLAIN[x] || x}</option>)}</select></div>
       <div><label htmlFor="ba">Шийдвэр</label>
         <select id="ba" value={action} onChange={(e) => setAction(e.target.value)}>
-          <option value="accepted">Хүлээн зөвшөөрөх</option><option value="excluded">Мөрүүдийг хасах</option>
+          <option value="accepted">Зөвшөөрөх</option><option value="excluded">Мөрүүдийг хасах</option>
         </select></div>
       <div className="grow"><label htmlFor="bs">Шалтгаан</label>
-        <input id="bs" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Жишээ: нэгж нэг төрөл тул хөрвүүлэлт шаардлагагүй" /></div>
+        <input id="bs" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Жишээ: нэгж зөв байна" /></div>
       <button disabled={reason.trim().length < 3} onClick={async () => {
         const res = await api.post(`/dataset-versions/${vid}/issues/bulk`, { rule_id: r, action, reason });
-        setMsg(`${res.updated} асуудал шийдэгдлээ. «Засвар хэрэглэх» дарна уу.`); setReason(""); onDone();
+        setMsg(`${res.updated} асуудал шийдэгдлээ. «Засварыг хэрэгжүүлэх» дарна уу.`); setReason(""); onDone();
       }}>Бүгдийг шийдэх</button>
       {msg && <div className="small muted" style={{ flexBasis: "100%" }}>{msg}</div>}
     </div>
@@ -124,7 +124,7 @@ function IssueTable({ items, total, onChange }) {
     <>
       <p className="small muted">{total} асуудал{total > items.length ? `, эхний ${items.length}` : ""}</p>
       <table>
-        <thead><tr><th>Юу</th><th>Бараа</th><th>Огноо / мөр</th><th>Тайлбар</th><th>Анхны утга</th><th>Шийдвэр</th></tr></thead>
+        <thead><tr><th>Асуудал</th><th>Бараа</th><th>Огноо, мөр</th><th>Тайлбар</th><th>Анхны утга</th><th>Шийдвэр</th></tr></thead>
         <tbody>{items.map((i) => (
           <tr key={i.id}>
             <td className="small" title={i.rule_id}>{RULE_PLAIN[i.rule_id] || i.rule_id}</td><td>{i.product_id ? seriesLabel(i) : "—"}</td>
@@ -151,12 +151,12 @@ function Decide({ issue, onDone }) {
   return (
     <div style={{ minWidth: 240 }}>
       <select value={action} onChange={(e) => setAction(e.target.value)} aria-label="Шийдвэр">
-        <option value="accepted">Хүлээн зөвшөөрөх</option>
+        <option value="accepted">Зөвшөөрөх</option>
         {issue.source_row && <option value="excluded">Мөрийг хасах</option>}
-        {correctable && <option value="corrected">Утга залруулах</option>}
+        {correctable && <option value="corrected">Утгыг засах</option>}
       </select>
-      {action === "corrected" && <input placeholder={issue.rule_id === "DQ-01" ? "Зөв хэмжээ" : "YYYY-MM-DD"} value={value} onChange={(e) => setValue(e.target.value)} style={{ marginTop: 4 }} />}
-      <input placeholder="Шалтгаан (заавал)" value={reason} onChange={(e) => setReason(e.target.value)} style={{ marginTop: 4 }} />
+      {action === "corrected" && <input placeholder={issue.rule_id === "DQ-01" ? "Зөв тоо" : "2024-01-31"} value={value} onChange={(e) => setValue(e.target.value)} style={{ marginTop: 4 }} />}
+      <input placeholder="Шалтгаан" value={reason} onChange={(e) => setReason(e.target.value)} style={{ marginTop: 4 }} />
       <button style={{ marginTop: 4 }} disabled={reason.trim().length < 3} onClick={async () => {
         try { await api.patch(`/issues/${issue.id}`, { action, reason, corrected_value: action === "corrected" ? value : null }); onDone(); }
         catch (x) { setErr(x); }
@@ -198,7 +198,7 @@ function SeriesTable({ rows, onPick, picked }) {
   return (
     <div className="panel table-wrap">
       <table>
-        <thead><tr><th>Бараа</th><th>Салбар</th><th className="num">Хоног</th><th className="num">Зараагүй өдөр</th>
+        <thead><tr><th>Бараа</th><th>Салбар</th><th className="num">Өдөр</th><th className="num">Зараагүй өдөр</th>
           <th className="num">Шалтгаан тодорхойгүй</th><th className="num">Асуудал</th><th></th></tr></thead>
         <tbody>{shown.map((s) => (
           <tr key={s.series_id} className="clickable" onClick={() => onPick(s)} style={picked?.series_id === s.series_id ? { background: "var(--sky-soft)" } : null}>
@@ -209,7 +209,7 @@ function SeriesTable({ rows, onPick, picked }) {
           </tr>))}
         </tbody>
       </table>
-      {rows.length > 10 && <button className="quiet" style={{ marginTop: 8 }} onClick={() => setAll(!all)}>{all ? "Цөөнийг харуулах" : `Бүх ${rows.length} барааг харах`}</button>}
+      {rows.length > 10 && <button className="quiet" style={{ marginTop: 8 }} onClick={() => setAll(!all)}>{all ? "Хураах" : `Бүгдийг харах (${rows.length})`}</button>}
     </div>
   );
 }
@@ -230,7 +230,7 @@ function DayCalendar({ vid, s }) {
   for (const d of inMonth) counts[d.state] = (counts[d.state] || 0) + 1;
   return (
     <div className="panel">
-      <h3 style={{ marginTop: 0 }}>{seriesLabel(s)} — өдөр бүрийн төлөв</h3>
+      <h3 style={{ marginTop: 0 }}>{seriesLabel(s)}</h3>
       {!days.data ? <Loading /> : (
         <div className="row" style={{ alignItems: "flex-start", gap: "1.5rem" }}>
           <div style={{ flex: "1 1 360px" }}>
@@ -250,10 +250,9 @@ function DayCalendar({ vid, s }) {
             </div>
           </div>
           <div style={{ flex: "1 1 260px" }} className="cal-legend">
-            <p className="why" style={{ margin: "0 0 0.5rem" }}><b>Яагаад 0 гэж бичихгүй вэ?</b> Гүйлгээгүй өдөр «хүн аваагүй» гэсэн үг биш байж болно — дэлгүүр хаалттай, бараа дууссан, эсвэл бүртгэл дутуу байж магадгүй.</p>
             {Object.entries(STATES).map(([k, v]) => (
               <div key={k}><span className={`sw ${LIGHT.has(k) ? "light" : ""}`} style={{ background: v.color }} aria-hidden="true">{v.code}</span>
-                <b>{v.label}</b>{counts[k] ? ` · ${counts[k]} өдөр` : ""} <span className="muted">— {v.note}</span></div>))}
+                <b>{v.label}</b>{counts[k] ? ` · ${counts[k]} өдөр` : ""} <span className="muted">· {v.note}</span></div>))}
           </div>
         </div>
       )}

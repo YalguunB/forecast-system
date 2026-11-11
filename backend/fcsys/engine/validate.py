@@ -11,6 +11,9 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+DAY_LABELS = {"open_no_sale": "нээлттэй", "stockout": "нөөцгүй", "sold_out": "дууссан", "stockout_est": "нөөцгүй бололтой", "closed": "хаалттай",
+              "missing": "бүртгэлгүй", "unknown": "тодорхойгүй"}
+
 MIN_SERIES_DAYS = 330          # DQ-09, §2.5.5
 QUARANTINE_BLOCK_SHARE = 0.01  # DQ-02: карантины хувь үүнээс их бол блоклоно
 MAX_ROW_ISSUES_PER_RULE = 500  # нэг дүрмээр мөр бүрийн асуудлыг хязгаарлах (нэгтгэсэн мөр нэмэгдэнэ)
@@ -80,8 +83,7 @@ def validate_transactions(tx: pd.DataFrame, today: dt.date, unit_conversions: li
         share = len(bad_date) / max(n, 1)
         if share > QUARANTINE_BLOCK_SHARE:
             res.issues.append(Issue("DQ-02", "blocking",
-                                    f"Огнооны алдаатай мөр {len(bad_date)} ({share:.1%}) — "
-                                    f"{QUARANTINE_BLOCK_SHARE:.0%}-аас их тул хувилбарыг блоклов"))
+                                    f"{len(bad_date)} мөрийн огноо буруу ({share:.1%}). Хэт олон тул файлыг ашиглахгүй."))
 
     ok = tx[~tx["source_row"].isin(res.quarantined_rows)]
     # DQ-11 — цуцлагдсан захиалга → борлуулалтад тооцохгүй (анхны мөр хадгалагдана), мэдээлэл
@@ -94,7 +96,7 @@ def validate_transactions(tx: pd.DataFrame, today: dt.date, unit_conversions: li
             n_can = len(g) - n_ret
             what = ", ".join(x for x in (f"{n_can} цуцлагдсан" if n_can else "", f"{n_ret} буцаагдсан" if n_ret else "") if x)
             res.issues.append(Issue("DQ-11", "info",
-                                    f"{what} захиалга — борлуулалтад тооцоогүй (анхны мөр хадгалагдсан)",
+                                    f"{what} захиалгыг борлуулалтад тооцоогүй",
                                     pid, bid, original_value=str(len(g))))
         ok = ok[~ok["is_cancelled"]]
 
@@ -118,10 +120,10 @@ def validate_transactions(tx: pd.DataFrame, today: dt.date, unit_conversions: li
             unconverted = [u for u in us if u != base and (pid, u) not in conv and ("*", u) not in conv]
             if unconverted:
                 shown = ", ".join(sorted(map(str, us))[:5]) + (f" … (нийт {len(us)})" if len(us) > 5 else "")
-                hint = (" — нэгжийн баганад тоо байна; буруу багана (жишээ нь үнэ) зураглагдсан байж магадгүй"
+                hint = (". Нэгжийн баганад тоо байна, өөр багана сонгогдсон байж магадгүй"
                         if numeric_share(pd.Series(us)) > 0.8 else "")
                 res.issues.append(Issue("DQ-04", "blocking",
-                                        f"{pid}: олон нэгж [{shown}]; «{base}» руу хөрвүүлэлт тодорхойлоогүй{hint}",
+                                        f"Нэг барааг өөр нэгжээр бичсэн: {shown}{hint}",
                                         product_id=pid, original_value=shown[:200]))
 
     # DQ-05 — сөрөг хэмжээ, буцаалт → тусад нь хадгалж цэвэр борлуулалт тооцно
@@ -130,16 +132,14 @@ def validate_transactions(tx: pd.DataFrame, today: dt.date, unit_conversions: li
         g = ret.groupby(["product_ext_id", "branch_ext_id"]).size()
         for (pid, bid), cnt in g.items():
             res.issues.append(Issue("DQ-05", "warning",
-                                    f"{cnt} буцаалтын мөр — тусад нь хадгалж цэвэр борлуулалтаас хасав "
-                                    f"(сөрөг эрэлт гэж тооцохгүй)", pid, bid, original_value=str(cnt)))
+                                    f"{cnt} буцаалтыг борлуулалтаас хассан", pid, bid, original_value=str(cnt)))
 
     # DQ-10 — «бодит» үнэ хүчинтэй болохоосоо өмнө мэдэгдсэн гэж бичигдсэн → блоклох
     if prices is not None and len(prices):
         actual = prices[(prices["price_kind"] == "actual") & (prices["known_at"] < prices["date"])]
         for r in actual.head(MAX_ROW_ISSUES_PER_RULE).itertuples(index=False):
             res.issues.append(Issue("DQ-10", "blocking",
-                                    "«Бодит» үнэ хүчинтэй огнооноосоо өмнө мэдэгдсэн гэж тэмдэглэгдсэн; "
-                                    "таамаглах эхлэлийн оролтод ирээдүйн мэдээлэл орох эрсдэлтэй",
+                                    "Үнийн огноо зөрүүтэй: үнэ мөрдөгдөхөөсөө өмнө мэдэгдсэн гэж бичигдсэн",
                                     r.product_id, r.branch_id, r.date.date(),
                                     original_value=f"known_at={r.known_at.date()}"))
     return res
@@ -160,14 +160,13 @@ def series_level_checks(daily: pd.DataFrame) -> list[Issue]:
         if len(no_txn):
             counts = no_txn.day_state.value_counts().to_dict()
             issues.append(Issue("DQ-08", "info",
-                                "Гүйлгээгүй өдөр төлөвтэй боллоо: "
-                                + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())),
+                                "Борлуулалтгүй өдөр: "
+                                + ", ".join(f"{DAY_LABELS.get(k, k)} {v}" for k, v in sorted(counts.items())),
                                 pid, bid, original_value=str(len(no_txn))))
         # DQ-09 — цуваа богино
         if n_days < MIN_SERIES_DAYS:
             issues.append(Issue("DQ-09", "warning",
-                                f"Цувааны урт {n_days} хоног (< {MIN_SERIES_DAYS}) — үндсэн харьцуулалтад "
-                                "орохгүй, тусдаа бүлэгт тайлагнана", pid, bid, original_value=str(n_days)))
+                                f"Түүх богино: {n_days} хоног", pid, bid, original_value=str(n_days)))
         # DQ-06 — статистик хэт утга (median + 8·MAD), устгахгүй
         pos = g.loc[g.sales_qty > 0, "sales_qty"]
         if len(pos) >= 20:
@@ -177,7 +176,7 @@ def series_level_checks(daily: pd.DataFrame) -> list[Issue]:
                 out = g[(g.sales_qty > med + 8 * 1.4826 * mad)]
                 for r in out.head(20).itertuples(index=False):
                     issues.append(Issue("DQ-06", "info",
-                                        f"Хэт өндөр утга (медиан {med:g}); устгаагүй, тэмдэглэв",
+                                        f"Ердийнхөөс хэт өндөр (ихэвчлэн {med:g})",
                                         pid, bid, r.day, original_value=f"{r.sales_qty:g}"))
 
     # DQ-07 — бүтээгдэхүүний код солигдсон сэжиг: нэг салбарт нэг цуваа дуусч,
@@ -198,8 +197,7 @@ def series_level_checks(daily: pd.DataFrame) -> list[Issue]:
                 gap = (b[1] - a[2]).days
                 if 0 <= gap <= 14 and 0.5 <= (b[4] / a[4]) <= 2.0:
                     issues.append(Issue("DQ-07", "warning",
-                                        f"Код солигдсон байж магадгүй: {a[0]} {a[2].date()}-нд дууссан, "
-                                        f"{b[0]} {b[1].date()}-нд эхэлсэн (ижил түвшин)",
+                                        f"Код солигдсон байж магадгүй: {a[0]} {a[2].date()}-нд зогсож, {b[0]} {b[1].date()}-нд эхэлсэн",
                                         b[0], bid, b[1].date(), original_value=f"{a[0]}->{b[0]}"))
     return issues
 

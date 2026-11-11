@@ -33,7 +33,7 @@ def list_datasets(conn=Depends(get_conn, scope="function"), user=Depends(require
 @router.post("/datasets", status_code=201)
 def create_dataset(body: DatasetIn, conn=Depends(get_conn, scope="function"), user=Depends(require("import"))):
     if conn.execute("SELECT 1 FROM raw.dataset WHERE name=%s", (body.name,)).fetchone():
-        raise ApiError(409, "duplicate_name", "Ийм нэртэй өгөгдлийн багц байна")
+        raise ApiError(409, "duplicate_name", "Ийм нэртэй багц байна")
     row = conn.execute("INSERT INTO raw.dataset (name, description, source, created_by) VALUES (%s,%s,%s,%s) "
                        "RETURNING *", (body.name, body.description, body.source, user["id"])).fetchone()
     audit(conn, user["id"], "create", "dataset", row["id"], {"name": body.name})
@@ -57,7 +57,7 @@ def preview(dataset_id: int, file: UploadFile = File(...), conn=Depends(get_conn
     try:
         df = ingest.read_table(tmp, nrows=2000)   # огнооны хэлбэрийг таних түүвэр
     except Exception as exc:  # noqa: BLE001
-        raise ApiError(422, "unreadable_file", "Файлыг уншиж чадсангүй (CSV эсвэл Excel байх ёстой)",
+        raise ApiError(422, "unreadable_file", "Файлыг уншиж чадсангүй. CSV эсвэл Excel файл оруулна уу.",
                        {"error": str(exc)[:300]})
     finally:
         tmp.unlink(missing_ok=True)
@@ -93,7 +93,7 @@ def create_version(
         conversions = json.loads(unit_conversions) if unit_conversions else []
         subset = json.loads(subset_rule) if subset_rule else None
     except json.JSONDecodeError as exc:
-        raise ApiError(422, "invalid_json", "mapping / unit_conversions JSON буруу", {"error": str(exc)})
+        raise ApiError(422, "invalid_json", "Баганын тохиргоо буруу байна", {"error": str(exc)})
 
     store = Path(get_settings().file_store) / f"dataset_{dataset_id}"
     path = _save_upload(file, store)
@@ -105,13 +105,12 @@ def create_version(
     missing = ingest.missing_required(cols, fields)
     if missing:   # UC-01 хувилбар 2а / DQ-01: импорт зогсож, хувилбар үүсэхгүй
         path.unlink(missing_ok=True)
-        raise ApiError(422, "missing_required_fields", "Заавал талбар дутуу: " + ", ".join(missing),
+        raise ApiError(422, "missing_required_fields", "Заавал сонгох багана дутуу байна",
                        {"missing": missing, "columns": cols})
     scope = branch_scope(user)
     if scope is not None and not scope:   # салбар оноогоогүй менежер — scope[0] дээр унахын оронд тайлбарлана
         path.unlink(missing_ok=True)
-        raise ApiError(403, "no_branches", "Танд хариуцах салбар оноогоогүй байна. Админ «Хэрэглэгч ба эрх» хэсэгт "
-                       "салбар (эсвэл «Бүх салбар») оноосны дараа өгөгдөл оруулах боломжтой.")
+        raise ApiError(403, "no_branches", "Танд салбар оноогоогүй байна. Админд хандана уу.")
     if scope is not None:   # FR-08: менежер зөвхөн өөрийн салбарын өгөгдөл импортлоно
         if fields.get("branch_id"):
             found = set(ingest.read_table(path)[fields["branch_id"]].astype(str).str.strip()) - {""}
@@ -119,13 +118,13 @@ def create_version(
             if foreign:
                 path.unlink(missing_ok=True)
                 raise ApiError(403, "branch_forbidden",
-                               f"Файлд таны хариуцаагүй салбарын мөр байна: {', '.join(foreign[:10])}",
+                               f"Файлд таны хариуцдаггүй салбар байна: {', '.join(foreign[:10])}",
                                {"your_branches": scope, "foreign": foreign[:50]})
         else:
             default_branch = default_branch or scope[0]
             if default_branch not in scope:
                 path.unlink(missing_ok=True)
-                raise ApiError(403, "branch_forbidden", f"«{default_branch}» салбар таны хариуцах салбар биш",
+                raise ApiError(403, "branch_forbidden", f"{default_branch} салбарыг та хариуцдаггүй",
                                {"your_branches": scope})
     if fields.get("unit"):
         from ...engine.validate import numeric_share
@@ -133,15 +132,15 @@ def create_version(
         if numeric_share(sample) > 0.8:
             path.unlink(missing_ok=True)
             raise ApiError(422, "unit_column_numeric",
-                           f"«{fields['unit']}» баганад тоон утга байна — энэ нь хэмжих нэгж биш бололтой "
-                           "(жишээ нь «ширхэг», «кг»). Нэгж талбарыг «— байхгүй —» болгоно уу.",
+                           f"{fields['unit']} баганад тоо бичигдсэн байна. Нэгж нь ширхэг, кг гэх мэт үг байх ёстой. "
+                           "Нэгжийн баганыг хоосон орхино уу.",
                            {"column": fields["unit"], "sample": sample.head(5).tolist()})
     sha = ingest.sha256_file(path)
     dup = conn.execute("SELECT id, version_no FROM raw.dataset_version WHERE dataset_id=%s AND sha256=%s",
                        (dataset_id, sha)).fetchone()
     if dup and not force:   # UC-01 хувилбар 4а
         path.unlink(missing_ok=True)
-        raise ApiError(409, "duplicate_checksum", f"Ижил checksum-тай хувилбар байна (v{dup['version_no']})",
+        raise ApiError(409, "duplicate_checksum", f"Энэ файлыг өмнө нь оруулсан байна (хувилбар {dup['version_no']})",
                        {"version_id": dup["id"], "sha256": sha})
     aux = {}
     for kind, up in (("price", price_file), ("calendar", calendar_file), ("inventory", inventory_file),
@@ -270,7 +269,7 @@ def _assert_version_editable(conn, vid: int) -> None:
                         (vid,)).fetchone()
     if used:
         raise ApiError(409, "version_in_use",
-                       "Энэ хувилбарыг түгжигдсэн туршилт ашиглаж байна — шинэ хувилбар импортлоно уу",
+                       "Энэ файлыг батлагдсан таамаглал ашиглаж байна. Засвар хийх бол файлаа дахин оруулна уу.",
                        {"experiment_id": used["id"]})
 
 
@@ -283,14 +282,14 @@ def decide_issue(issue_id: int, body: IssueDecision, conn=Depends(get_conn, scop
     _assert_version_editable(conn, it["dataset_version_id"])
     if body.action == "corrected":
         if it["rule_id"] not in ("DQ-01", "DQ-02") or it["source_row"] is None:
-            raise ApiError(422, "not_correctable", "Залруулга зөвхөн мөрийн DQ-01 (хэмжээ), DQ-02 (огноо)-д")
+            raise ApiError(422, "not_correctable", "Зөвхөн хэмжээ, огноог засах боломжтой")
         try:
             float(body.corrected_value) if it["rule_id"] == "DQ-01" else __import__("datetime").date.fromisoformat(
                 body.corrected_value or "")
         except (TypeError, ValueError):
-            raise ApiError(422, "invalid_correction", "Залруулсан утгын хэлбэр буруу (тоо эсвэл YYYY-MM-DD)")
+            raise ApiError(422, "invalid_correction", "Утга буруу байна. Тоо эсвэл 2024-01-31 хэлбэрийн огноо бичнэ үү.")
     if body.action == "excluded" and it["source_row"] is None:
-        raise ApiError(422, "not_excludable", "Мөртэй холбоогүй асуудлыг хасах боломжгүй; «accepted» сонгоно уу")
+        raise ApiError(422, "not_excludable", "Энэ асуудлыг хасах боломжгүй. «Зөвшөөрөх»-ийг сонгоно уу.")
     row = conn.execute(
         "UPDATE curated.data_quality_issue SET action=%s, reason=%s, corrected_value=%s, resolved_by=%s, "
         "resolved_at=now() WHERE id=%s RETURNING *, severity::text AS severity",

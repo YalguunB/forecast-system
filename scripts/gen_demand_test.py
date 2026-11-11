@@ -13,6 +13,7 @@
   transactions.csv  — системд өгөх борлуулалт (өдөр × бараа)
   inventory.csv     — өглөөний үлдэгдэл, available = үлдэгдэл > 0 (найдвартай)
   true_demand.csv   — ЖИНХЭНЭ эрэлт ба борлуулалт (системд ӨГӨХГҮЙ, зөвхөн шалгалтад)
+  upload/           — системд оруулах transactions.csv, inventory.csv (--cut хүртэл)
 
 Хэрэглээ: python scripts/gen_demand_test.py --out data/demand_test --seed 7
 """
@@ -32,6 +33,7 @@ def main() -> None:
     ap.add_argument("--start", default="2020-01-01")
     ap.add_argument("--end", default="2025-12-31")
     ap.add_argument("--products", type=int, default=24)
+    ap.add_argument("--cut", default="2024-12-31", help="системд оруулах файлууд энэ огноо хүртэл (upload/ хавтаст)")
     a = ap.parse_args()
     rng = np.random.default_rng(a.seed)
     days = pd.date_range(a.start, a.end, freq="D")
@@ -75,6 +77,12 @@ def main() -> None:
         .to_csv(out / "transactions.csv", index=False)
     pd.DataFrame(inv, columns=["date", "product_id", "branch_id", "on_hand", "available", "reliability"]) \
         .to_csv(out / "inventory.csv", index=False)
+    # Системд зөвхөн --cut хүртэлх өгөгдлийг өгнө; түүнээс хойших жинхэнэ эрэлтээр таамаглалыг шалгана
+    up = out / "upload"
+    up.mkdir(exist_ok=True)
+    for name, col in (("transactions.csv", "sale_date"), ("inventory.csv", "date")):
+        d = pd.read_csv(out / name, dtype=str)
+        d[d[col] <= a.cut].to_csv(up / name, index=False)
     t = pd.DataFrame(truth, columns=["date", "product_id", "true_demand", "sales", "stockout_morning", "policy"])
     t.to_csv(out / "true_demand.csv", index=False)
     g = t.groupby("policy")[["true_demand", "sales", "stockout_morning"]].mean()

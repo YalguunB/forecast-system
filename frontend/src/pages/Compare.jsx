@@ -2,12 +2,12 @@ import { useMemo, useState } from "react";
 import { api } from "../api.js";
 import { go } from "../App.jsx";
 import { ErrorNote, Help, Loading, Plot, plotLayout, useLoad } from "../components.jsx";
-import { runName, seriesLabel, HORIZONS, MODEL_LABELS, fmt, monthLabel, pct } from "../labels.js";
+import { runName, seriesLabel, HORIZONS, MODEL_LABELS, fmt, monthLabel, pct, PERIOD_OF } from "../labels.js";
 
 const PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"];
-const runLabel = (r) => (MODEL_LABELS[r.model] || r.model) + (r.model === "ets" && r.params?.trend ? " (өсөлттэй)" : "") + (r.role === "baseline" ? " (суурь)" : "");
-const CLASS = { smooth: ["Тогтвортой", "Сар бүр жигд зарагддаг"], erratic: ["Хэлбэлзэлтэй", "Сар бүр, гэхдээ их савалгаатай"],
-  intermittent: ["Тасалдалтай", "Зарим сард огт зарагддаггүй"], lumpy: ["Бөөгнөрсөн", "Ховор, гэхдээ их хэмжээгээр"], unknown: ["Тодорхойгүй", "Хэв шинж тодорхойлох өгөгдөл хүрэлцээгүй"] };
+const runLabel = (r) => (MODEL_LABELS[r.model] || r.model) + (r.model === "ets" && r.params?.trend ? " (өсөлттэй)" : "") + (r.role === "baseline" ? " (энгийн арга)" : "");
+const CLASS = { smooth: ["Тогтвортой", "Сар бүр жигд зарагддаг"], erratic: ["Хэлбэлзэлтэй", "Сар бүр, гэхдээ тогтворгүй"],
+  intermittent: ["Тасалдалтай", "Зарим сард огт зарагддаггүй"], lumpy: ["Бөөгнөрсөн", "Ховор, их хэмжээгээр"], unknown: ["Тодорхойгүй", "Өгөгдөл хүрэлцээгүй"] };
 
 // FR-F4: загваруудыг ижил эхлэл дээр харьцуулах
 export default function Compare({ params }) {
@@ -37,22 +37,22 @@ export default function Compare({ params }) {
   return (
     <>
       <h1>Аль арга хамгийн сайн бэ?</h1>
-      <p className="muted">Бүх арга ижил сарууд, ижил бараан дээр шалгагдсан тул шударга харьцуулалт.</p>
-      {!list.length ? <p className="muted">Аргуудыг туршсан таамаглал алга.</p> : (
+      <p className="muted">Бүх аргыг ижил сар, ижил бараан дээр шалгасан.</p>
+      {!list.length ? <p className="muted">Туршсан таамаглал алга.</p> : (
         <div className="row" style={{ marginBottom: "1rem" }}>
           <div className="grow"><label htmlFor="e">Таамаглал</label>
             <select id="e" value={eid} onChange={(e) => go("compare", { experiment: e.target.value })}>
-              {list.map((e) => <option key={e.id} value={e.id}>#{e.id} {e.name} — {e.target_label}</option>)}
+              {list.map((e) => <option key={e.id} value={e.id}>{e.name} ({e.target_label.toLowerCase()})</option>)}
             </select></div>
           <div className="grow"><label htmlFor="s">Бараа</label>
             <select id="s" value={sid || ""} onChange={(e) => nav({ series: e.target.value, origin: undefined })}>
               {(series.data || []).map((s) => <option key={s.series_id} value={s.series_id}>{seriesLabel(s)}{CLASS[s.class] ? ` · ${CLASS[s.class][0]}` : ""}</option>)}
             </select></div>
-          <div><label htmlFor="sp">Аль шалгалт</label>
+          <div><label htmlFor="sp">Шалгалт</label>
             <select id="sp" value={split} onChange={(e) => nav({ split: e.target.value, origin: undefined })}>
-              <option value="validation">Дадлага шалгалт</option><option value="test">Эцсийн шалгалт</option>
+              <option value="validation">Туршилт</option><option value="test">Эцсийн шалгалт</option>
             </select></div>
-          {c && <div><label htmlFor="o">Сүүлийн мэдэгдэх сар</label>
+          {c && <div><label htmlFor="o">Эхлэх сар</label>
             <select id="o" value={c.origin_date} onChange={(e) => nav({ origin: e.target.value })}>
               {c.origins.map((o) => <option key={o} value={o}>{monthLabel(o, true)}</option>)}
             </select></div>}
@@ -60,25 +60,25 @@ export default function Compare({ params }) {
       )}
       {eid && <Overview eid={eid} />}
       <h2>Нэг бараан дээр харах</h2>
-      <p className="small muted">Бүх аргын таамаглалыг нэг сараас эхлүүлж, бодит борлуулалттай (цэг) хамт харуулна. Аль арга яагаад сонгогдсоныг ойлгоход тусална.</p>
+      <p className="small muted">Цэг нь бодит борлуулалт.</p>
       <ErrorNote error={cmp.error} />
       {c && (
         <>
           <div className="panel">
-            <p className="small"><b>{c.target_label}</b>, {c.unit} / сар, сүүлийн мэдэгдэх сар {monthLabel(c.origin_date, true)}</p>
+            <p className="small"><b>{c.target_label}</b>, {c.unit} / сар, {monthLabel(c.origin_date, true)}-аас</p>
             <Plot data={traces} useResizeHandler style={{ width: "100%", height: 380 }} config={{ displayModeBar: false, responsive: true }}
               layout={plotLayout({ xaxis: { type: "date", tickformat: "%Y.%m", gridcolor: "rgba(128,140,150,0.15)" }, shapes: [{ type: "line", x0: c.origin_date, x1: c.origin_date, yref: "paper", y0: 0, y1: 1, line: { dash: "dot", width: 1, color: "#7b8a92" } }] })} />
           </div>
           <div className="panel table-wrap">
             <table>
-              <thead><tr><th>Арга</th>{HORIZONS.map(([h, l]) => <th key={h} className="num">{l}ын таамаглалын алдаа</th>)}<th className="num">Илүү (+) / дутуу (−) таамагласан, улирал</th></tr></thead>
+              <thead><tr><th>Арга</th>{HORIZONS.map(([h, l]) => <th key={h} className="num">{PERIOD_OF[h]} алдаа</th>)}<th className="num">Хазайлт, улирал</th></tr></thead>
               <tbody>{c.runs.map((r) => (
                 <tr key={r.run_id}><td>{runLabel(r)}</td>
-                  {HORIZONS.map(([h]) => { const m = r.metrics[h]?.WAPE; return <td key={h} className="num" title={m?.undefined_reason || (m ? "" : "энэ эхлэлээс бүтэн хугацаа ажиглагдаагүй")}>{m ? (m.value === null ? "тодорхойгүй" : pct(m.value)) : "—"}</td>; })}
+                  {HORIZONS.map(([h]) => { const m = r.metrics[h]?.WAPE; return <td key={h} className="num" title={m?.undefined_reason || ""}>{m ? (m.value === null ? "тодорхойгүй" : pct(m.value)) : "—"}</td>; })}
                   <td className="num">{fmt(r.metrics[3]?.Bias?.value, 1)}</td></tr>))}
               </tbody>
             </table>
-            <p className="small muted">«—» = энэ сараас эхлэхэд тухайн хугацаа бүтэн өнгөрөөгүй. Нэг сарын дүн санамсаргүй хэлбэлзэлтэй — систем аргыг бүх сар, бүх барааны дунджаар сонгодог.</p>
+            <p className="small muted">«—»: хугацаа хараахан өнгөрөөгүй.</p>
           </div>
         </>
       )}
@@ -101,31 +101,30 @@ function Overview({ eid }) {
   return (
     <>
       <div className="tabs" role="tablist">
-        {HORIZONS.map(([h, l]) => <button key={h} role="tab" aria-selected={hz === h} className={hz === h ? "on" : ""} onClick={() => setHz(h)}>{l}ын таамаглал</button>)}
+        {HORIZONS.map(([h, l]) => <button key={h} role="tab" aria-selected={hz === h} className={hz === h ? "on" : ""} onClick={() => setHz(h)}>{PERIOD_OF[h]} таамаглал</button>)}
       </div>
       {t && !t.n_compared && (
-        <div className="notice warn">{HORIZONS.find(([h]) => h === hz)?.[1]}ын таамаглалын алдааг эцсийн шалгалтаар хэмжих боломжгүй: шалгах хугацаа {hz} сараас богино.</div>
+        <div className="notice warn">{PERIOD_OF[hz]} таамаглалын алдааг хэмжих боломжгүй. Шалгах хугацаа богино.</div>
       )}
       {t && t.n_compared > 0 && (
         <div className="summary">
           <div className="big">{pct(t.share_improved_vs_baseline)}<small>бараанд энгийн аргаас сайн</small></div>
           <div>
-            <p>Эцсийн шалгалтаар системийн сонгосон арга {t.n_compared} барааны <b>{Math.round((t.share_improved_vs_baseline ?? 0) * t.n_compared)}</b>-д энгийн «Сүүлийн 3 сарын дундаж» аргаас бага алдсан.</p>
-            <p className="small muted">Үлдсэнд энгийн арга адил эсвэл илүү байсан. <b>Энгийн аргатай яагаад харьцуулдаг вэ?</b> Нарийн арга хэрэгтэй эсэхийг мэдэх цорын ганц арга — энгийн нь адил сайн бол төвөгтэйг ашиглах шаардлагагүй.</p>
+            <p>Сонгосон арга {t.n_compared} барааны <b>{Math.round((t.share_improved_vs_baseline ?? 0) * t.n_compared)}</b>-д энгийн аргаас (3 сарын дундаж) бага алдсан.</p>
           </div>
         </div>
       )}
       <div className="panel table-wrap">
-        <h3 style={{ marginTop: 0 }}>Арга бүрийн дүн <span className="muted small" style={{ fontWeight: 400 }}>· дадлага шалгалт</span></h3>
+        <h3 style={{ marginTop: 0 }}>Арга бүрийн дүн</h3>
         <table>
-          <thead><tr><th>Арга</th><th>Энгийн аргатай харьцуулахад <Help k="WAPE" /></th><th className="num">Сарын алдаа</th><th className="num">Сонгогдсон бараа</th></tr></thead>
+          <thead><tr><th>Арга</th><th>Энгийн аргатай харьцуулахад <Help k="WAPE" /></th><th className="num">Сарын алдаа</th><th className="num">Сонгосон бараа</th></tr></thead>
           <tbody>{rows.map((v) => {
             const isBase = v === base;
             const d = base && !isBase ? v.mean / base.mean - 1 : null;
             const n = Object.entries(selCounts).filter(([k]) => k === v.model).reduce((a, [, x]) => a + x, 0);
             return (
               <tr key={v.model} style={isBase ? { background: "var(--paper)" } : null}>
-                <td>{runName(v.model)}{isBase ? <> <span className="badge">Суурь</span></> : null}</td>
+                <td>{runName(v.model)}{isBase ? <> <span className="badge">Энгийн арга</span></> : null}</td>
                 <td>{isBase ? <span className="muted small">Бусдыг үүнтэй харьцуулна</span>
                   : <span style={{ color: d <= 0 ? "var(--ok)" : "var(--danger)", fontWeight: 600 }}>{Math.abs(d * 100).toFixed(0)}% {d <= 0 ? "бага алддаг" : "их алддаг"}</span>}</td>
                 <td className="num">{pct(v.mean)}</td>
@@ -136,7 +135,7 @@ function Overview({ eid }) {
       </div>
       {cls.length > 0 && (
         <>
-          <h3>Борлуулалтын хэв шинжээр <Help k="class" /></h3>
+          <h3>Борлуулалтын төрлөөр <Help k="class" /></h3>
           <div className="grp-cards">{cls.map((x) => {
             const [name, desc] = CLASS[x.class] || [x.class, ""];
             const better = x.selected.median != null && x.baseline.median != null && x.selected.median < x.baseline.median;
@@ -145,7 +144,7 @@ function Overview({ eid }) {
                 <b>{name} <span className="muted" style={{ fontWeight: 400 }}>· {x.selected.n} бараа</span></b>
                 <span className="muted">{desc}</span>
                 <span>Сарын алдаа <b>{pct(x.selected.median)}</b> (энгийн арга {pct(x.baseline.median)})</span>
-                <span className={`badge ${better ? "ok" : "warn"}`} style={{ alignSelf: "flex-start" }}>{better ? "Энгийн аргаас сайн" : "Энгийн аргатай адил эсвэл муу"}</span>
+                <span className={`badge ${better ? "ok" : "warn"}`} style={{ alignSelf: "flex-start" }}>{better ? "Энгийн аргаас сайн" : "Энгийн аргаас сайн биш"}</span>
               </div>);
           })}</div>
         </>

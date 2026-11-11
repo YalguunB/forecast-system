@@ -78,7 +78,7 @@ def build_monthly(daily: pd.DataFrame, target: str, date_max) -> pd.DataFrame:
     m = d["day"].dt.to_period("M").dt.to_timestamp()
     state = d["day_state"].values
     qty = d["sales_qty"].astype(float).values
-    stock = state == "stockout"
+    stock = (state == "stockout") | (state == "stockout_est")
     soldout = state == "sold_out"
     frame = pd.DataFrame({"m": m.values, "qty": qty, "gap": np.isin(state, GAP_STATES), "stock": stock,
                           "soldout": soldout, "qty_full": np.where(stock | soldout, 0.0, qty)})
@@ -94,10 +94,10 @@ def build_monthly(daily: pd.DataFrame, target: str, date_max) -> pd.DataFrame:
     reason = np.full(len(g), None, dtype=object)
     incomplete = g["n_days"].values < dim
     y[incomplete] = np.nan
-    reason[incomplete] = "дутуу сар (өдөр дутуу)"
+    reason[incomplete] = "бүтэн бус сар"
     no_records = (~incomplete) & (g["n_gap"].values >= g["n_days"].values)
     y[no_records] = np.nan
-    reason[no_records] = "сард гүйлгээ бүртгэгдээгүй"
+    reason[no_records] = "борлуулалт бүртгэгдээгүй"
     if target == "demand":
         # Нөөцгүй өдрийн 0 нь эрэлт биш (халхлагдсан). Сарын эрэлт = нөөцтэй өдрийн дундаж борлуулалт ×
         # нээлттэй өдрийн тоо (in-stock rate засвар). Нөөцгүй өдөр хэт олон бол мэдээлэл хүрэлцэхгүй → NaN.
@@ -108,14 +108,14 @@ def build_monthly(daily: pd.DataFrame, target: str, date_max) -> pd.DataFrame:
         ok = (~incomplete) & (~no_records)
         cens = ok & (g["n_stockout"].values > CENSOR_SHARE * open_days)
         y[cens] = np.nan
-        reason[cens] = f"нөөцгүй өдөр {int(CENSOR_SHARE * 100)}%-иас олон (эрэлт халхлагдсан)"
+        reason[cens] = "нөөц олон хоног тасарсан"
         adj = ok & ~cens & (n_cens > 0) & (avail > 0)
         full = g["qty_full"].fillna(0).values
         # халхлагдаагүй өдрийн дундаж × нээлттэй өдөр; дууссан өдрийн бодит борлуулалтаас бага гарахгүй
         y[adj] = np.maximum(full[adj] / avail[adj] * open_days[adj], y[adj])
         no_full = ok & ~cens & (n_cens > 0) & (avail <= 0)
         y[no_full] = np.nan
-        reason[no_full] = "нөөц тасарсангүй өдөр байхгүй (эрэлт тодорхойгүй)"
+        reason[no_full] = "нөөц бүх өдөр тасарсан"
     out = pd.DataFrame({"y": y, "n_days": g["n_days"].values, "n_gap": g["n_gap"].values,
                         "n_stockout": g["n_stockout"].values, "reason": reason}, index=idx)
     out.index.name = "month"

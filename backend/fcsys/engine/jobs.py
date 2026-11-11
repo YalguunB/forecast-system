@@ -156,7 +156,7 @@ def _build_and_store(conn, ver: dict, tx: pd.DataFrame, res: dq.ValidationResult
     valid_dates = clean["txn_date"].dropna()
     date_max = valid_dates.max() if len(valid_dates) else None
     if date_max is None:
-        raise JobError("Уншигдах огноотой мөр алга — хувилбарыг ашиглах боломжгүй")
+        raise JobError("Файлд зөв огноотой мөр алга")
     daily = grid.build_daily(clean, date_max, aux.get("calendar"), aux.get("inventory"))
     smap = _series_map(conn, ver["dataset_id"], daily, _product_names(clean), _product_attr(clean, "product_category"))
     _write_daily(conn, vid, daily, smap)
@@ -264,19 +264,14 @@ def _batched(ids: list[int], size: int) -> list[list[int]]:
 def handle_validate(conn, job: dict, url: str) -> str:
     exp = _experiment(conn, job["payload"]["experiment_id"])
     if exp["status"] != "validating":
-        raise JobError(f"Туршилтын төлөв '{exp['status']}' — validation эхлүүлэх боломжгүй")
+        raise JobError("Аргуудыг одоо турших боломжгүй")
     proto = exp["protocol"]
     last = last_complete_month(exp["date_max"])
     sp = make_splits(last, proto["val_months"], proto["test_months"], proto["train_min_months"])
     vid = exp["dataset_version_id"]
-    if exp["target"] == "demand":
-        has_inv = conn.execute("SELECT 1 FROM curated.inventory_snapshot WHERE dataset_version_id=%s LIMIT 1",
-                               (vid,)).fetchone()
-        if not has_inv:
-            raise JobError("Эрэлтийн (D) зорилтод нөөцийн хүртээмжийн өгөгдөл шаардлагатай (R2, UC-08)")
 
     # 1. Цувааны дэд багц (FR-D9): дүрэм, seed бүртгэгдэнэ. Өдрийн цуваанаас сарын цуваа (2.1).
-    set_progress(url, job["id"], stage="Сарын цуваа ба дэд багц")
+    set_progress(url, job["id"], stage="Өгөгдөл бэлтгэж байна")
     daily = load_daily(conn, vid)
     rule = proto["sample"]
     seed = int(proto["seed"])
@@ -324,10 +319,8 @@ def handle_validate(conn, job: dict, url: str) -> str:
         items.append((sid, sid in chosen, None if sid in chosen else f"дэд багцад сонгогдоогүй (seed {seed})"))
     if not chosen:
         need = proto["train_min_months"] + proto["val_months"] + proto["test_months"]
-        raise JobError(f"Таамаглал гаргахад бараа бүрт дор хаяж {need} бүтэн сарын борлуулалт хэрэгтэй "
-                       f"(сурах {proto['train_min_months']}, дадлага шалгалт {proto['val_months']}, эцсийн шалгалт "
-                       f"{proto['test_months']} сар), харин энэ файлын хамгийн урт түүх {longest} бүтэн сар. "
-                       f"Илүү урт хугацааны борлуулалтын файл оруулна уу.")
+        raise JobError(f"Бараа бүрт дор хаяж {need} сарын борлуулалт хэрэгтэй. Энэ файлд хамгийн ихдээ {longest} сар байна. "
+                       f"Илүү урт хугацааны файл оруулна уу.")
 
     conn.execute("DELETE FROM experiment.series_sample_item WHERE sample_id IN "
                  "(SELECT id FROM experiment.series_sample WHERE experiment_id=%s)", (exp["id"],))
@@ -368,7 +361,7 @@ def handle_validate(conn, job: dict, url: str) -> str:
 def handle_test(conn, job: dict, url: str) -> str:
     exp = _experiment(conn, job["payload"]["experiment_id"])
     if exp["status"] != "locked":
-        raise JobError("Тест зөвхөн сонголт түгжигдсэн (locked) үед нэг удаа ажиллана")
+        raise JobError("Эцсийн шалгалтыг сонголт батлагдсаны дараа нэг л удаа хийнэ")
     proto = exp["protocol"]
     sel = conn.execute(
         "SELECT ms.series_id, ms.run_id, r.model, r.params, r.input_checksum FROM experiment.model_selection ms "

@@ -9,9 +9,9 @@ export default function Admin() {
   return (
     <>
       <h1>Хэрэглэгч ба эрх</h1>
-      <p className="muted">Хэн юу хийж болохыг энд тохируулна.</p>
+      <p className="muted">Хэрэглэгч, эрх, салбарыг тохируулна.</p>
       <div className="tabs" role="tablist">
-        {[["users", "Хэрэглэгч"], ["archive", "Архив"], ["audit", "Үйлдлийн бүртгэл"]].map(([k, l]) => (
+        {[["users", "Хэрэглэгч"], ["archive", "Архив"], ["audit", "Бүртгэл"]].map(([k, l]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
@@ -36,7 +36,7 @@ function BranchPicker({ value, onChange, branches, id }) {
         <button type="button" key={b} className={`chip ${!all && value.includes(b) ? "on" : ""}`} aria-pressed={!all && value.includes(b)}
                 disabled={all} onClick={() => toggle(b)}>{b}</button>
       ))}
-      {!branches.length && <span className="small muted">Өгөгдөл оруулаагүй тул салбарын жагсаалт хоосон — «Бүх салбар» сонгоно уу.</span>}
+      {!branches.length && <span className="small muted">Салбар хараахан алга.</span>}
     </div>
   );
 }
@@ -74,7 +74,7 @@ function Users() {
                   {role !== "manager" ? <span className="muted small">{role === "executive" ? "Бүх салбар (харах)" : "—"}</span>
                     : editing === u.id
                       ? <BranchPicker value={u.branches || []} branches={branches.data || []} onChange={(b) => save(u, { branches: b })} />
-                      : <button className="quiet" onClick={() => setEditing(u.id)}>{branchText(u.branches)} — өөрчлөх</button>}
+                      : <button className="quiet" onClick={() => setEditing(u.id)}>{branchText(u.branches)} · өөрчлөх</button>}
                 </td>
                 <td><input type="checkbox" aria-label={`${u.username} идэвхтэй`} checked={u.is_active} onChange={() => save(u, { is_active: !u.is_active })} /></td>
               </tr>);
@@ -85,9 +85,9 @@ function Users() {
       <div className="panel">
         <h3 style={{ marginTop: 0 }}>Шинэ хэрэглэгч</h3>
         <div className="row">
-          <div className="grow"><label htmlFor="un">Нэвтрэх нэр (латин үсэг)</label><input id="un" value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} /></div>
+          <div className="grow"><label htmlFor="un">Нэвтрэх нэр (латинаар)</label><input id="un" value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} /></div>
           <div className="grow"><label htmlFor="fn">Овог нэр</label><input id="fn" value={f.full_name} onChange={(e) => setF({ ...f, full_name: e.target.value })} /></div>
-          <div className="grow"><label htmlFor="pw">Нууц үг (8+ тэмдэгт)</label><input id="pw" type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></div>
+          <div className="grow"><label htmlFor="pw">Нууц үг (8-аас дээш тэмдэгт)</label><input id="pw" type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></div>
         </div>
         <label style={{ marginTop: "0.75rem" }}>Үүрэг</label>
         <div className="chips">
@@ -105,7 +105,7 @@ function Users() {
         <button style={{ marginTop: "1rem" }} disabled={!f.username || f.password.length < 8 || (f.role === "manager" && !f.branches.length)}
           onClick={() => api.post("/users", { username: f.username, full_name: f.full_name, password: f.password, roles: [f.role],
                                               branches: f.role === "manager" ? f.branches : [] })
-            .then(() => { setMsg(`«${f.username}» нэмэгдлээ.`); setF(empty); users.reload(); }).catch(setErr)}>Хэрэглэгч нэмэх</button>
+            .then(() => { setMsg(`«${f.username}» нэмэгдлээ.`); setF(empty); users.reload(); }).catch(setErr)}>Нэмэх</button>
       </div>
     </>
   );
@@ -115,11 +115,11 @@ function Archive() {
   const versions = useLoad(() => api.get("/dataset-versions"), []);
   return (
     <div className="panel table-wrap">
-      <p className="small muted">Архивласан хувилбар устахгүй, шинэ туршилтад сонгогдохгүй болно.</p>
+      <p className="small muted">Архивласан файл устахгүй, шинэ таамаглалд ашиглагдахгүй.</p>
       <table>
-        <thead><tr><th>Өгөгдөл</th><th>Төлөв</th><th>Хугацаа</th><th className="num">Мөр</th><th></th></tr></thead>
+        <thead><tr><th>Файл</th><th>Төлөв</th><th>Хугацаа</th><th className="num">Мөр</th><th></th></tr></thead>
         <tbody>{(versions.data || []).map((v) => (
-          <tr key={v.id}><td>{v.dataset} v{v.version_no}</td><td>{VERSION_STATUS[v.status]}</td><td>{v.date_min} – {v.date_max}</td><td className="num">{v.row_count}</td>
+          <tr key={v.id}><td>{v.dataset} ({v.version_no})</td><td>{VERSION_STATUS[v.status]}</td><td>{v.date_min} – {v.date_max}</td><td className="num">{v.row_count}</td>
             <td>{v.archived_at ? <span className="badge">Архивласан</span> : <button className="quiet" onClick={() => api.post(`/dataset-versions/${v.id}/archive`).then(versions.reload)}>Архивлах</button>}</td></tr>))}
         </tbody>
       </table>
@@ -133,14 +133,12 @@ function Permissions() {
   return (
     <div className="panel table-wrap">
       <h3 style={{ marginTop: 0 }}>Үүрэг бүр юу хийж болох вэ?</h3>
-      <ul className="small" style={{ margin: "0 0 0.75rem", paddingLeft: "1.1rem", color: "var(--ink-2)" }}>{roles.map((k) => <li key={k}><b>{ROLE_LABELS[k]}</b> — {ROLE_DESC[k]}</li>)}</ul>
       <table>
         <thead><tr><th>Үйлдэл</th>{roles.map((k) => <th key={k} style={{ textAlign: "center" }}>{ROLE_LABELS[k]}</th>)}</tr></thead>
         <tbody>{PERMISSION_ROWS.map(([what, who]) => (
           <tr key={what}><td>{what}</td>{roles.map((k) => <td key={k} style={{ textAlign: "center" }}>{who.includes(k) ? <span className="yes">Тийм</span> : <span className="no">—</span>}</td>)}</tr>))}
         </tbody>
       </table>
-      <p className="small muted" style={{ marginBottom: 0 }}>Баталгаажсан аргын сонголтыг менежер ч өөрчилж чадахгүй — үүнийг эрх биш, өгөгдлийн сан өөрөө хамгаална.</p>
     </div>
   );
 }
@@ -161,7 +159,7 @@ function Audit() {
   const log = useLoad(() => api.get("/audit?limit=300"), []);
   return (
     <div className="panel table-wrap">
-      <p className="small muted" style={{ marginTop: 0 }}>Зөвхөн нэмэгддэг — засах, устгах боломжгүй.</p>
+      <p className="small muted" style={{ marginTop: 0 }}>Бүртгэлийг засах, устгах боломжгүй.</p>
       <table>
         <thead><tr><th>Хэзээ</th><th>Хэн</th><th>Юу хийсэн</th><th>Юуг</th><th>Дэлгэрэнгүй</th></tr></thead>
         <tbody>{(log.data || []).map((a) => (
@@ -169,7 +167,7 @@ function Audit() {
             <td title={a.action}>{AUDIT_ACTIONS[a.action] || a.action}</td>
             <td>{OBJECT_LABELS[a.object_type] || a.object_type} #{a.object_id}</td>
             <td className="small">{detailText(a.detail)}
-              {a.detail && Object.keys(a.detail).length > 0 && <details><summary className="facts-tech">техник</summary><code className="facts-tech">{JSON.stringify(a.detail)}</code></details>}</td></tr>))}
+              {a.detail && Object.keys(a.detail).length > 0 && <details><summary className="facts-tech">дэлгэрэнгүй</summary><code className="facts-tech">{JSON.stringify(a.detail)}</code></details>}</td></tr>))}
         </tbody>
       </table>
     </div>

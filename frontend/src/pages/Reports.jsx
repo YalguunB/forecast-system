@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { api } from "../api.js";
 import { go } from "../App.jsx";
 import { ErrorNote, Help, Loading, Plot, plotLayout, useLoad } from "../components.jsx";
-import { HORIZONS, PERIOD, PERIOD_LONG, accuracyLevel, MODEL_LABELS, fmt, monthLabel, pct, productLabel } from "../labels.js";
+import { HORIZONS, PERIOD, PERIOD_LONG, accuracyLevel, MODEL_LABELS, fmt, monthLabel, pct, productLabel, PERIOD_OF } from "../labels.js";
 
 // Categorical slots (validated default palette, fixed order). Өнгө ангиллыг дагана (эрэмбийг биш).
 const SLOTS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"];
@@ -96,7 +96,7 @@ export default function Reports({ params }) {
   const filtered = cats.length || branch || products.length || q;
 
   if (exps.loading) return <Loading />;
-  if (!done.length) return (<><h1>Тайлан</h1><p className="muted">Бэлэн таамаглал алга. 3 алхмыг дуусгасны дараа тайлан гарна.</p></>);
+  if (!done.length) return (<><h1>Тайлан</h1><p className="muted">Бэлэн таамаглал алга.</p></>);
   const P = PERIOD[horizon];
 
   return (
@@ -104,11 +104,11 @@ export default function Reports({ params }) {
       <div className="dash-head">
         <div>
           <h1>Тайлан</h1>
-          {r && <p className="muted small">{r.experiment.target_label} · {r.experiment.dataset} · {monthLabel(r.experiment.last_month, true)} хүртэл · нэгж: {r.experiment.unit}</p>}
+          {r && <p className="muted small">{r.experiment.target_label} · {r.experiment.dataset} · {monthLabel(r.experiment.last_month, true)} хүртэл · {r.experiment.unit}</p>}
         </div>
         <div className="row no-print">
-          <button className="quiet" onClick={() => api.download(`/reports/summary.xlsx?experiment_id=${eid}&horizon=${horizon}`, `report_exp${eid}_${horizon}m.xlsx`)}>Ангилал, бүтээгдэхүүний тайлан (Excel)</button>
-          <button className="quiet" onClick={() => window.print()}>PDF болгож хэвлэх</button>
+          <button className="quiet" onClick={() => api.download(`/reports/summary.xlsx?experiment_id=${eid}&horizon=${horizon}`, `report_exp${eid}_${horizon}m.xlsx`)}>Excel татах</button>
+          <button className="quiet" onClick={() => window.print()}>Хэвлэх</button>
         </div>
       </div>
 
@@ -126,7 +126,7 @@ export default function Reports({ params }) {
             <option value="">Бүгд</option>
             {[...new Set(r.series.map((s) => s.branch_id))].map((b) => <option key={b}>{b}</option>)}
           </select></div>}
-        <div><label htmlFor="rq">Бүтээгдэхүүн хайх</label>
+        <div><label htmlFor="rq">Бараа хайх</label>
           <input id="rq" value={q} onChange={(e) => setQ(e.target.value)} placeholder="нэр эсвэл код" /></div>
         {r && <div className="grow"><label>Ангилал <Help k="category" /></label>
           <div className="chips">
@@ -134,48 +134,47 @@ export default function Reports({ params }) {
               <button key={c} className={`chip ${cats.includes(c) ? "on" : ""}`} aria-pressed={cats.includes(c)} onClick={() => toggle(cats, setCats, c)}>
                 <i style={{ background: catColor[c] }} />{c}</button>))}
           </div></div>}
-        {filtered ? <button className="quiet" onClick={() => { setCats([]); setBranch(""); setProducts([]); setQ(""); }}>Шүүлтүүр арилгах</button> : null}
+        {filtered ? <button className="quiet" onClick={() => { setCats([]); setBranch(""); setProducts([]); setQ(""); }}>Шүүлтүүр цэвэрлэх</button> : null}
       </div>
-      {products.length > 0 && <p className="small">Сонгосон: <b>{products.join(", ")}</b>. График дээр дахин дарж хасна.</p>}
+      {products.length > 0 && <p className="small">Сонгосон: <b>{products.join(", ")}</b></p>}
 
       <ErrorNote error={rep.error} />
       {rep.loading && !r ? <Loading /> : r && agg && (
         <>
           <div className="kpis">
-            <Kpi label="Сүүлийн 12 сарын борлуулалт" value={fmt(agg.last12, 0)} sub={`${r.experiment.unit}, ${sel.length} бүтээгдэхүүн`} />
-            <Kpi label={`Таамаглал: ${PERIOD_LONG[horizon]}`} value={fmt(agg.total, 0)} sub={agg.change === null ? r.experiment.unit : `${chg(agg.change)} өмнөх оны ижил үеэс`} />
+            <Kpi label={r.experiment.target === "demand" ? "Сүүлийн 12 сарын эрэлт" : "Сүүлийн 12 сарын борлуулалт"} value={fmt(agg.last12, 0)} sub={`${r.experiment.unit}, ${sel.length} бараа`} />
+            <Kpi label={`Таамаглал: ${PERIOD_LONG[horizon]}`} value={fmt(agg.total, 0)} sub={agg.change === null ? r.experiment.unit : `${chg(agg.change)} өнгөрсөн оноос`} />
             <Kpi label={<>Найдвартай байдал <Help k="WAPE" /></>} value={accuracyLevel(agg.wapeSel, agg.wapeBase).label}
                  sub={`сарын алдаа ${pct(agg.wapeSel)} (энгийн арга ${pct(agg.wapeBase)})`} />
-            {horizon > 1 && <Kpi label={<>{P}ын нийт дүнгийн алдаа <Help k="SUM_APE" /></>} value={pct(agg.periodErr)} sub="өнгөрсөн 12 сарын шалгалтын медиан" />}
-            <Kpi label={<>Энгийн аргаас сайн <Help k="baseline" /></>} value={pct(agg.improved)} sub="бүтээгдэхүүний хувь" />
-            <Kpi label={<>Хүрээнд багтсан <Help k="COVERAGE" /></>} value={r.kpi.coverage === null ? "—" : pct(r.kpi.coverage)} sub="80% орчим байх нь зөв" />
+            {horizon > 1 && <Kpi label={<>{PERIOD_OF[horizon]} нийт дүнгийн алдаа <Help k="SUM_APE" /></>} value={pct(agg.periodErr)} sub="өнгөрсөн 12 сараар шалгасан" />}
+            <Kpi label={<>Энгийн аргаас сайн <Help k="baseline" /></>} value={pct(agg.improved)} sub="барааны хувь" />
           </div>
 
           <div className="tiles">
-            <Tile title={`Сарын борлуулалт ба ${P.toLowerCase()}ын таамаглал`} wide
-                  note="Цэнхэр — таамаглал. Саарал тасархай — өнгөрсөн оны ижил сар.">
+            <Tile title={`Сарын борлуулалт ба ${PERIOD_OF[horizon].toLowerCase()} таамаглал`} wide
+                  note="Цэнхэр: таамаглал. Тасархай шугам: өнгөрсөн оны мөн сар.">
               <Plot data={[
-                { x: r.history_months, y: agg.hist, name: "Бодит борлуулалт", type: "bar", marker: { color: GRAY }, hovertemplate: "%{x|%Y.%m}: %{y:,.0f}<extra>Бодит</extra>" },
+                { x: r.history_months, y: agg.hist, name: r.experiment.target === "demand" ? "Өнгөрсөн эрэлт" : "Бодит борлуулалт", type: "bar", marker: { color: GRAY }, hovertemplate: "%{x|%Y.%m}: %{y:,.0f}<extra>Бодит</extra>" },
                 { x: r.forecast_months, y: agg.fc, name: "Таамаглал", type: "bar", marker: { color: SLOTS[0] }, hovertemplate: "%{x|%Y.%m}: %{y:,.0f}<extra>Таамаглал</extra>" },
-                { x: r.forecast_months, y: agg.lyMonths, name: "Өмнөх оны ижил сар", type: "scatter", mode: "lines+markers",
-                  line: { color: INK, width: 2, dash: "dot" }, marker: { size: 8 }, hovertemplate: "%{y:,.0f}<extra>Өмнөх оны ижил сар</extra>" },
+                { x: r.forecast_months, y: agg.lyMonths, name: "Өнгөрсөн оны мөн сар", type: "scatter", mode: "lines+markers",
+                  line: { color: INK, width: 2, dash: "dot" }, marker: { size: 8 }, hovertemplate: "%{y:,.0f}<extra>Өнгөрсөн оны мөн сар</extra>" },
               ]} layout={plotLayout({ height: 320, bargap: 0.25, hovermode: "closest", xaxis: { type: "date", tickformat: "%Y.%m", dtick: "M3", gridcolor: grid },
                 yaxis: { title: { text: `${r.experiment.unit} / сар` }, rangemode: "tozero", gridcolor: grid } })}
                 style={{ width: "100%" }} useResizeHandler config={cfg} />
             </Tile>
 
-            <Tile title={`Ангиллаар: ${P.toLowerCase()}ын таамаглал`} note="Саарал — өнгөрсөн оны ижил үе. Баганан дээр дарж шүүнэ.">
+            <Tile title={`Ангиллаар: ${PERIOD_OF[horizon].toLowerCase()} таамаглал`} note="Саарал: өнгөрсөн он. Дарж шүүнэ.">
               <Plot data={[
-                { type: "bar", orientation: "h", name: "Өмнөх оны ижил үе", y: [...agg.byCat].reverse().map((c) => c.key), x: [...agg.byCat].reverse().map((c) => c.ly),
+                { type: "bar", orientation: "h", name: "Өнгөрсөн он", y: [...agg.byCat].reverse().map((c) => c.key), x: [...agg.byCat].reverse().map((c) => c.ly),
                   marker: { color: GRAY }, hovertemplate: "%{y}: %{x:,.0f}<extra>Өмнөх он</extra>" },
-                { type: "bar", orientation: "h", name: "Таамаглал (өнгө = ангилал)", y: [...agg.byCat].reverse().map((c) => c.key), x: [...agg.byCat].reverse().map((c) => c.fc),
+                { type: "bar", orientation: "h", name: "Таамаглал", y: [...agg.byCat].reverse().map((c) => c.key), x: [...agg.byCat].reverse().map((c) => c.fc),
                   marker: { color: [...agg.byCat].reverse().map((c) => catColor[c.key]) }, hovertemplate: "%{y}: %{x:,.0f}<extra>Таамаглал</extra>" },
               ]} layout={plotLayout({ height: Math.max(260, agg.byCat.length * 46 + 70), barmode: "group", bargap: 0.3, bargroupgap: 0.08, hovermode: "closest",
                 margin: { l: 110, r: 12, t: 8, b: 40 }, yaxis: { automargin: true }, xaxis: { rangemode: "tozero", gridcolor: grid } })}
                 onClick={(ev) => { const k = ev.points?.[0]?.y; if (k) toggle(cats, setCats, k); }} style={{ width: "100%" }} useResizeHandler config={cfg} />
             </Tile>
 
-            <Tile title="Ангиллын эзлэх хувь" note="Нийт таамаглалд ангилал бүрийн эзлэх хувь.">
+            <Tile title="Ангиллын эзлэх хувь">
               <Plot data={[{ type: "pie", hole: 0.6, sort: false, direction: "clockwise",
                 labels: agg.byCat.map((c) => c.key), values: agg.byCat.map((c) => c.fc ?? 0),
                 marker: { colors: agg.byCat.map((c) => catColor[c.key]), line: { color: "#fff", width: 2 } },
@@ -186,7 +185,7 @@ export default function Reports({ params }) {
             </Tile>
 
             {horizon > 1 && (
-              <Tile title="Сар бүрийн таамаглал ангиллаар" wide note="Багана бүр нэг сар. Өнгө бүр нэг ангилал.">
+              <Tile title="Сар бүрийн таамаглал ангиллаар" wide>
                 <Plot data={agg.byCat.map((c) => ({ type: "bar", name: c.key, x: r.forecast_months, y: c.months, marker: { color: catColor[c.key], line: { color: "#fff", width: 1 } },
                   hovertemplate: `${c.key}: %{y:,.0f}<extra></extra>` }))}
                   layout={plotLayout({ height: 320, barmode: "stack", bargap: 0.3, hovermode: "x unified", xaxis: { type: "date", tickformat: "%Y.%m", dtick: "M1", gridcolor: grid },
@@ -195,12 +194,12 @@ export default function Reports({ params }) {
               </Tile>
             )}
 
-              <Tile title={`Бүтээгдэхүүнээр: топ 15 (${P.toLowerCase()})`} wide note="Саарал — өнгөрсөн оны ижил үе. Баганан дээр дарж шүүнэ.">
+              <Tile title="Хамгийн их таамагласан 15 бараа" wide note="Саарал: өнгөрсөн он. Дарж шүүнэ.">
               <TopProducts rows={agg.byProduct} catColor={catColor} onPick={(p) => toggle(products, setProducts, p)} picked={products} />
             </Tile>
 
             {r.season && (
-              <Tile title="Улирлын хэв маяг: он × сар" note="Бараан өнгө — өндөр борлуулалт. Хоосон нүд — дутуу сар.">
+              <Tile title="Он, сараар" note="Бараан өнгө: их борлуулалт.">
                 <Plot data={[{ type: "heatmap", z: r.season.z, x: MONTHS, y: r.season.rows.map(String),
                   colorscale: [[0, "#cde2fb"], [0.5, "#5598e7"], [1, "#184f95"]], xgap: 2, ygap: 2,
                   hovertemplate: "%{y} оны %{x}-р сар: %{z:,.0f}<extra></extra>", colorbar: { thickness: 10 } }]}
@@ -209,23 +208,23 @@ export default function Reports({ params }) {
               </Tile>
             )}
 
-            <Tile title={<>Аргуудын сарын алдаа <Help k="WAPE" /></>} note="Бага алдаа нь илүү сайн таамаглал гэсэн үг.">
+            <Tile title={<>Аргуудын сарын алдаа <Help k="WAPE" /></>} note="Бага нь сайн.">
               <MethodBars validation={r.validation} />
             </Tile>
           </div>
 
           <div className="tabs" role="tablist" style={{ marginTop: "1.5rem" }}>
-            {[["category", "Ангиллаар"], ["product", "Бүтээгдэхүүний нэрээр"], ["series", "Цуваа бүрээр"]].map(([k, l]) => (
+            {[["category", "Ангиллаар"], ["product", "Бараагаар"], ["series", "Бараа, салбараар"]].map(([k, l]) => (
               <button key={k} role="tab" aria-selected={view === k} className={view === k ? "on" : ""} onClick={() => setView(k)}>{l}</button>))}
           </div>
           {view === "category" && <GroupTable rows={agg.byCat} label="Ангилал" months={r.forecast_months} total={agg.total} color={catColor} />}
-          {view === "product" && <GroupTable rows={agg.byProduct} label="Бүтээгдэхүүн" months={r.forecast_months} total={agg.total} showCats limit={showAll ? undefined : 20}
+          {view === "product" && <GroupTable rows={agg.byProduct} label="Бараа" months={r.forecast_months} total={agg.total} showCats limit={showAll ? undefined : 20}
             onMore={agg.byProduct.length > 20 ? () => setShowAll(!showAll) : null} showAll={showAll} />}
           {view === "series" && (
             <div className="panel table-wrap">
               <table>
-                <thead><tr><th>Бүтээгдэхүүн</th><th>Ангилал</th><th>Салбар</th><th>Хэв шинж</th><th>Арга</th>
-                  <th className="num">Таамаглал</th><th className="num">Өмнөх он</th><th className="num">Өөрчлөлт</th>
+                <thead><tr><th>Бараа</th><th>Ангилал</th><th>Салбар</th><th>Төрөл</th><th>Арга</th>
+                  <th className="num">Таамаглал</th><th className="num">Өнгөрсөн он</th><th className="num">Өөрчлөлт</th>
                   <th className="num">Сарын алдаа</th><th className="num">Энгийн арга</th><th></th></tr></thead>
                 <tbody>{[...sel].sort((a, b) => (b.total_forecast ?? 0) - (a.total_forecast ?? 0)).slice(0, showAll ? undefined : 20).map((s) => (
                   <tr key={s.id}><td>{productLabel(s)}</td><td>{s.category}</td><td>{s.branch_id}</td><td>{CLASS[s.class]}</td><td>{MODEL_LABELS[s.model] || s.model}</td>
@@ -234,7 +233,7 @@ export default function Reports({ params }) {
                     <td><a href={`#/forecast?experiment=${eid}&series=${s.id}&h=${horizon}`}>Харах</a></td></tr>))}
                 </tbody>
               </table>
-              {sel.length > 20 && <button className="quiet" style={{ marginTop: 8 }} onClick={() => setShowAll(!showAll)}>{showAll ? "Эхний 20-ийг харуулах" : `Бүх ${sel.length} цувааг харуулах`}</button>}
+              {sel.length > 20 && <button className="quiet" style={{ marginTop: 8 }} onClick={() => setShowAll(!showAll)}>{showAll ? "Хураах" : `Бүгдийг харах (${sel.length})`}</button>}
             </div>
           )}
           <p className="small muted">{r.note}</p>
@@ -249,8 +248,8 @@ function GroupTable({ rows, label, months, total, color, showCats, limit, onMore
   return (
     <div className="panel table-wrap">
       <table>
-        <thead><tr><th>{label}</th>{showCats && <th>Ангилал</th>}<th className="num">Цуваа</th><th className="num">Таамаглал</th><th className="num">Эзлэх хувь</th>
-          <th className="num">Өмнөх оны ижил үе</th><th className="num">Өөрчлөлт</th><th className="num">Сарын алдаа <Help k="WAPE" /></th>
+        <thead><tr><th>{label}</th>{showCats && <th>Ангилал</th>}<th className="num">Тоо</th><th className="num">Таамаглал</th><th className="num">Эзлэх хувь</th>
+          <th className="num">Өнгөрсөн он</th><th className="num">Өөрчлөлт</th><th className="num">Сарын алдаа <Help k="WAPE" /></th>
           {monthCols && months.map((m) => <th key={m} className="num small">{monthLabel(m)}</th>)}</tr></thead>
         <tbody>{rows.slice(0, limit).map((g) => (
           <tr key={g.key}><td>{color && <i className="swatch" style={{ background: color[g.key] }} />}{g.key}</td>
@@ -265,7 +264,7 @@ function GroupTable({ rows, label, months, total, color, showCats, limit, onMore
             {monthCols && months.map((_, i) => <td key={i} className="num small">{fmt(sum(rows.map((g) => g.months[i])), 0)}</td>)}</tr>
         </tbody>
       </table>
-      {onMore && <button className="quiet" style={{ marginTop: 8 }} onClick={onMore}>{showAll ? "Эхний 20-ийг харуулах" : `Бүх ${rows.length}-ийг харуулах`}</button>}
+      {onMore && <button className="quiet" style={{ marginTop: 8 }} onClick={onMore}>{showAll ? "Хураах" : `Бүгдийг харах (${rows.length})`}</button>}
     </div>
   );
 }
@@ -289,9 +288,9 @@ function TopProducts({ rows, catColor, onPick, picked }) {
   const op = (p) => (!picked.length || picked.includes(p) ? 1 : 0.35);
   return (
     <Plot data={[
-      { type: "bar", orientation: "h", name: "Өмнөх оны ижил үе", y: top.map((g) => g.key), x: top.map((g) => g.ly),
+      { type: "bar", orientation: "h", name: "Өнгөрсөн он", y: top.map((g) => g.key), x: top.map((g) => g.ly),
         marker: { color: GRAY, opacity: top.map((g) => op(g.key)) }, hovertemplate: "%{y}: %{x:,.0f}<extra>Өмнөх он</extra>" },
-      { type: "bar", orientation: "h", name: "Таамаглал (өнгө = ангилал)", y: top.map((g) => g.key), x: top.map((g) => g.fc),
+      { type: "bar", orientation: "h", name: "Таамаглал", y: top.map((g) => g.key), x: top.map((g) => g.fc),
         marker: { color: top.map((g) => catColor[[...g.cats][0]] || SLOTS[0]), opacity: top.map((g) => op(g.key)) },
         customdata: top.map((g) => [...g.cats].join(", ")), hovertemplate: "%{y} (%{customdata}): %{x:,.0f}<extra>Таамаглал</extra>" },
     ]} layout={plotLayout({ height: Math.max(320, top.length * 30 + 70), barmode: "group", bargap: 0.3, bargroupgap: 0.06, hovermode: "closest",
@@ -301,7 +300,7 @@ function TopProducts({ rows, catColor, onPick, picked }) {
 }
 
 function MethodBars({ validation }) {
-  const labels = (v) => (MODEL_LABELS[v.model] || v.model) + (v.model === "ets" && v.params?.trend ? " + тренд" : "");
+  const labels = (v) => (MODEL_LABELS[v.model] || v.model) + (v.model === "ets" && v.params?.trend ? " (өсөлттэй)" : "");
   const keys = [...new Set(validation.map(labels))].reverse();
   return (
     <Plot data={HORIZONS.map(([h, l], i) => ({

@@ -25,16 +25,16 @@ export default function Dashboard({ user }) {
 
   const steps = [
     { title: "Өгөгдөл оруулах", done: hasData,
-      text: hasData ? `${vs.length} хувилбар оруулсан.` : "Борлуулалтын CSV эсвэл Excel файлаа оруулна.",
+      text: hasData ? `${vs.length} файл оруулсан.` : "Борлуулалтын CSV эсвэл Excel файлаа оруулна.",
       action: isManager && { label: hasData ? "Шинэ файл оруулах" : "Файл оруулах", to: ["import"] } },
     { title: "Өгөгдөл шалгах", done: cleanData,
-      text: failed ? "Нэг хувилбарт засах шаардлагатай алдаа байна." : cleanData ? "Өгөгдөл шалгагдаж, ашиглахад бэлэн." : "Оруулсны дараа систем автоматаар шалгана.",
+      text: failed ? "Нэг файлд засах алдаа байна." : cleanData ? "Өгөгдөл бэлэн." : "Систем автоматаар шалгана.",
       action: hasData && { label: failed ? "Алдааг засах" : "Шалгалтыг харах", to: ["quality", failed ? { version: failed.id } : {}] } },
-    { title: "Таамаглал гаргуулах", done: ready.length > 0,
-      text: inProgress ? `«${inProgress.name}» — ${Object.fromEntries(EXP_STEPS)[inProgress.status]}.` : ready.length ? `${ready.length} таамаглал бэлэн.` : "Систем аргуудыг туршиж, хамгийн тохирохыг сонгоно.",
+    { title: "Таамаглал бэлтгэх", done: ready.length > 0,
+      text: inProgress ? `${inProgress.name}: ${Object.fromEntries(EXP_STEPS)[inProgress.status].toLowerCase()}.` : ready.length ? `${ready.length} таамаглал бэлэн.` : "Систем хамгийн тохирох аргыг сонгоно.",
       action: cleanData && isManager && { label: inProgress ? "Үргэлжлүүлэх" : "Шинэ таамаглал", to: ["experiments", inProgress ? { id: inProgress.id } : {}] } },
     { title: "Үр дүн харах", done: false,
-      text: ready.length ? "Бүтээгдэхүүн бүрийн таамаглал, нийт тайлан, Excel татах." : "Таамаглал бэлэн болмогц энд харагдана.",
+      text: ready.length ? "Барааны таамаглал, тайлан, Excel." : "Таамаглал бэлэн болмогц харагдана.",
       action: ready.length && { label: "Тайлан нээх", to: ["reports", { experiment: ready[0].id }] } },
   ];
   const nextIdx = steps.findIndex((s) => !s.done);
@@ -44,12 +44,11 @@ export default function Dashboard({ user }) {
       <h1>Сайн байна уу, {user.full_name || user.username}</h1>
       <p className="muted">
         {user.roles.map((r) => ROLE_LABELS[r]).join(", ")}
-        {isManager && <> · хариуцах салбар: <b>{branchText(user.branches)}</b></>}
-        {" — "}{isManager ? ROLE_DESC.manager : ROLE_DESC.executive}
+        {isManager && <> · салбар: <b>{branchText(user.branches)}</b></>}
       </p>
       <ErrorNote error={versions.error || exps.error} />
       {isManager && (!user.branches || user.branches.length === 0) && (
-        <div className="notice warn">Танд салбар оноогоогүй байна. Админд хандаж салбар оноолгоно уу.</div>
+        <div className="notice warn">Танд салбар оноогоогүй байна. Админд хандана уу.</div>
       )}
 
       {isManager && <ol className="flow">
@@ -63,12 +62,12 @@ export default function Dashboard({ user }) {
         ))}
       </ol>}
       {!isManager && ready.length === 0 && (
-        <div className="intro"><p>Одоогоор бэлэн таамаглал алга. Менежерүүд өгөгдлөө оруулж таамаглал гаргуулсны дараа энд харагдана.</p></div>
+        <div className="intro"><p>Бэлэн таамаглал алга.</p></div>
       )}
 
       {running.length > 0 && (
         <>
-          <h2>Одоо ажиллаж буй тооцоолол</h2>
+          <h2>Ажиллаж байна</h2>
           <p className="small muted">Хуудсаа хаасан ч үргэлжилнэ.</p>
           {running.map((j) => <JobProgress key={j.id} jobId={j.id} onDone={() => { jobs.reload(); versions.reload(); exps.reload(); }} />)}
         </>
@@ -81,13 +80,13 @@ export default function Dashboard({ user }) {
           <h2>Бэлэн таамаглалууд</h2>
           <div className="panel table-wrap">
             <table>
-              <thead><tr><th>Нэр</th><th>Юуг таамагласан</th><th>Өгөгдөл</th><th></th></tr></thead>
+              <thead><tr><th>Нэр</th><th>Төрөл</th><th>Өгөгдөл</th><th></th></tr></thead>
               <tbody>{ready.map((e) => (
                 <tr key={e.id}>
-                  <td>{e.name}</td><td>{e.target_label}</td><td>{e.dataset} v{e.version_no}</td>
+                  <td>{e.name}</td><td>{e.target_label}</td><td>{e.dataset}</td>
                   <td className="row" style={{ gap: 8 }}>
                     <button className="quiet" onClick={() => go("reports", { experiment: e.id })}>Тайлан</button>
-                    <button className="quiet" onClick={() => go("forecast", { experiment: e.id })}>Бүтээгдэхүүнээр</button>
+                    <button className="quiet" onClick={() => go("forecast", { experiment: e.id })}>Бараагаар</button>
                   </td>
                 </tr>))}
               </tbody>
@@ -98,10 +97,10 @@ export default function Dashboard({ user }) {
 
       {jobs.data?.length > 0 && (
         <>
-          <h2>Миний сүүлийн ажлууд</h2>
+          <h2>Сүүлийн ажлууд</h2>
           <div className="panel table-wrap">
             <table>
-              <thead><tr><th>Ажил</th><th>Төлөв</th><th>Тайлбар</th><th>Хэзээ</th></tr></thead>
+              <thead><tr><th>Ажил</th><th>Төлөв</th><th>Тэмдэглэл</th><th>Хэзээ</th></tr></thead>
               <tbody>{jobs.data.map((j) => (
                 <tr key={j.id}>
                   <td>{JOB_TYPE[j.type] || j.type}</td>
@@ -122,33 +121,32 @@ export default function Dashboard({ user }) {
 function Attention({ failed, ready }) {
   const rep = useLoad(() => (ready ? api.get(`/reports/dashboard?experiment_id=${ready.id}&horizon=1`) : Promise.resolve(null)), [ready?.id]);
   const items = [];
-  if (failed) items.push({ tone: "bad", tag: "Өгөгдөлд алдаа", title: `${failed.dataset} v${failed.version_no}`,
-    text: "Засах шаардлагатай алдаа байгаа тул энэ файлаар таамаглал гаргахгүй.", to: ["quality", { version: failed.id }], btn: "Засах" });
+  if (failed) items.push({ tone: "bad", tag: "Өгөгдөлд алдаа", title: failed.dataset,
+    text: "Алдааг засах хүртэл энэ файлыг ашиглахгүй.", to: ["quality", { version: failed.id }], btn: "Засах" });
   const series = rep.data?.series || [];
   const worse = series.filter((s) => s.test?.WAPE?.selected != null && s.test?.WAPE?.baseline != null && s.test.WAPE.selected > s.test.WAPE.baseline)
     .sort((a, b) => (b.test.WAPE.selected - b.test.WAPE.baseline) - (a.test.WAPE.selected - a.test.WAPE.baseline));
   for (const s of worse.slice(0, 3)) items.push({ tone: "warn", tag: "Энгийн аргаас муу", title: seriesLabel(s),
-    text: `Системийн арга энэ бараанд энгийн аргаас их алддаг (алдаа ${pct(s.test.WAPE.selected)}, энгийн арга ${pct(s.test.WAPE.baseline)}). Таамаглалыг болгоомжтой ашиглана уу.`,
+    text: `Алдаа ${pct(s.test.WAPE.selected)}, энгийн арга ${pct(s.test.WAPE.baseline)}.`,
     to: ["forecast", { experiment: ready.id, series: s.id }], btn: "Шалгах" });
   const shaky = series.filter((s) => (s.test?.WAPE?.selected ?? 0) >= 0.4 && !worse.includes(s));
   if (shaky.length) items.push({ tone: "info", tag: "Алдаа өндөр", title: `${shaky.length} бараа`,
-    text: `Сарын алдаа 40%-иас их (жишээ: ${shaky.slice(0, 3).map(seriesLabel).join(", ")}). Ихэвчлэн ховор зарагддаг бараа — нийт дүнг ашиглах нь найдвартай.`,
+    text: `Сарын алдаа 40%-иас их: ${shaky.slice(0, 3).map(seriesLabel).join(", ")}${shaky.length > 3 ? "…" : ""}. Улирал, жилийн нийт дүн илүү найдвартай.`,
     to: ["reports", { experiment: ready.id }], btn: "Тайлан" });
   if (!failed && !ready) return null;
   return (
     <>
       <h2>Анхаарах зүйл</h2>
       <div className="panel">
-        <p className="small muted" style={{ marginTop: 0 }}>Бүх барааг нэг бүрчлэн шалгах шаардлагагүй — зөвхөн эдгээрийг харна уу.</p>
         {rep.loading ? <p className="muted small">Шалгаж байна…</p> : !items.length
-          ? <p style={{ margin: 0 }}><span className="badge ok">Хэвийн</span> Анхаарах зүйл алга. Бүх бараанд систем энгийн аргаас сайн эсвэл адил ажилласан.</p>
+          ? <p style={{ margin: 0 }}><span className="badge ok">Хэвийн</span> Анхаарах зүйл алга.</p>
           : <ul className="attn">{items.map((it, i) => (
               <li key={i}>
                 <span className={`badge ${it.tone}`}>{it.tag}</span>
                 <div className="what"><b>{it.title}</b><span>{it.text}</span></div>
                 <button className="quiet" onClick={() => go(...it.to)}>{it.btn}</button>
               </li>))}
-              {worse.length > 3 && <li className="small muted">…бусад {worse.length - 3} бараа «Тайлан» хэсэгт.</li>}
+              {worse.length > 3 && <li className="small muted">Бусад {worse.length - 3} бараа тайланд байна.</li>}
             </ul>}
       </div>
     </>
@@ -160,11 +158,11 @@ function AdminHome({ user }) {
     <>
       <h1>Сайн байна уу, {user.full_name || user.username}</h1>
       <div className="intro">
-        <p>Админ та хэрэглэгч бүртгэж, эрх ба салбар ононо. Систем гурван төрлийн хэрэглэгчтэй:</p>
+        <p>Гурван төрлийн хэрэглэгч байна:</p>
         <ol>
-          {Object.entries(ROLE_LABELS).map(([k, l]) => <li key={k}><b>{l}</b> — {ROLE_DESC[k]}</li>)}
+          {Object.entries(ROLE_LABELS).map(([k, l]) => <li key={k}><b>{l}</b>: {ROLE_DESC[k].charAt(0).toLowerCase() + ROLE_DESC[k].slice(1)}</li>)}
         </ol>
-        <p>Менежерт заавал салбар оноох ёстой; менежер зөвхөн өөрийн салбарын мэдээллийг харна.</p>
+        <p>Менежер зөвхөн өөрийн салбарыг харна.</p>
       </div>
       <button onClick={() => go("admin")}>Хэрэглэгч нэмэх</button>
     </>

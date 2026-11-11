@@ -76,7 +76,7 @@ def current_user(token: str = Depends(oauth2), conn: psycopg.Connection = Depend
     try:
         payload = jwt.decode(token, get_settings().jwt_secret, algorithms=["HS256"])
     except jwt.PyJWTError:
-        raise ApiError(status.HTTP_401_UNAUTHORIZED, "unauthenticated", "Нэвтрэх шаардлагатай")
+        raise ApiError(status.HTTP_401_UNAUTHORIZED, "unauthenticated", "Дахин нэвтэрнэ үү")
     user = conn.execute("SELECT id, username, full_name, roles, branches, is_active FROM governance.app_user WHERE id=%s",
                         (int(payload["sub"]),)).fetchone()
     if not user or not user["is_active"]:
