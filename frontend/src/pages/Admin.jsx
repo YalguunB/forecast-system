@@ -9,7 +9,6 @@ export default function Admin() {
   return (
     <>
       <h1>Хэрэглэгч ба эрх</h1>
-      <p className="muted">Хэрэглэгч, эрх, салбарыг тохируулна.</p>
       <div className="tabs" role="tablist">
         {[["users", "Хэрэглэгч"], ["archive", "Архив"], ["audit", "Бүртгэл"]].map(([k, l]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>

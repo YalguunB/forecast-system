@@ -147,7 +147,6 @@ function Detail({ id }) {
         {e.status === "draft" && (
           <>
             <h3 style={{ marginTop: 0 }}>1. Аргуудыг турших</h3>
-            <p>Хэдэн минут болно. Хуудсаа хаасан ч үргэлжилнэ.</p>
             <button onClick={() => act(async () => setJob((await api.post(`/experiments/${id}/validate`)).job_id))}>Аргуудыг турших</button>
           </>
         )}
@@ -162,14 +161,13 @@ function Detail({ id }) {
         {e.status === "validation_done" && (
           <>
             <h3 style={{ marginTop: 0 }}>2. Сонголтыг батлах <Help k="lock" /></h3>
-            <p>Систем бараа бүрт арга сонгосон. Батласны дараа өөрчлөх боломжгүй.</p>
+            <p>Батласны дараа өөрчлөх боломжгүй.</p>
             <button className="warn" onClick={() => act(() => api.post(`/experiments/${id}/lock`))}>Батлах</button>
           </>
         )}
         {e.status === "locked" && !e.test_job_id && (
           <>
             <h3 style={{ marginTop: 0 }}>3. Таамаглал бэлтгэх <Help k="test" /></h3>
-            <p>Сонгосон аргыг сүүлийн саруудад шалгаад ирэх 12 сарын таамаглал гаргана.</p>
             <button className="warn" onClick={() => act(async () => setJob((await api.post(`/experiments/${id}/test`)).job_id))}>Эхлүүлэх</button>
           </>
         )}

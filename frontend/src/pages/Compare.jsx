@@ -36,8 +36,7 @@ export default function Compare({ params }) {
   if (exps.loading) return <Loading />;
   return (
     <>
-      <h1>Аль арга хамгийн сайн бэ?</h1>
-      <p className="muted">Бүх аргыг ижил сар, ижил бараан дээр шалгасан.</p>
+      <h1>Хамгийн сайн арга</h1>
       {!list.length ? <p className="muted">Туршсан таамаглал алга.</p> : (
         <div className="row" style={{ marginBottom: "1rem" }}>
           <div className="grow"><label htmlFor="e">Таамаглал</label>
