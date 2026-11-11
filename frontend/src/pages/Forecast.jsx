@@ -27,18 +27,18 @@ export default function Forecast({ params, user }) {
   const [adjDate, setAdjDate] = useState(null);
 
   if (exps.loading) return <Loading />;
-  if (!done.length) return (<><h1>Барааны таамаглал</h1><Intro><p>Бэлэн таамаглал алга.</p></Intro></>);
+  if (!done.length) return (<><h1>Бүтээгдэхүүний таамаглал</h1><Intro><p>Бэлэн таамаглал алга.</p></Intro></>);
   const f = fc.data;
   const list = (series.data || []).filter((s) => !q || seriesLabel(s).toLowerCase().includes(q.toLowerCase()) || (s.product_category || "").toLowerCase().includes(q.toLowerCase()));
   return (
     <>
-      <h1>Барааны таамаглал</h1>
+      <h1>Бүтээгдэхүүний таамаглал</h1>
       <div className="row" style={{ marginBottom: "1rem" }}>
         <div className="grow"><label htmlFor="e">Таамаглал</label>
           <select id="e" value={eid} onChange={(e) => go("forecast", { experiment: e.target.value })}>
             {done.map((e) => <option key={e.id} value={e.id}>{e.name} ({e.target_label.toLowerCase()})</option>)}
           </select></div>
-        <div className="grow"><label htmlFor="s">Бараа</label>
+        <div className="grow"><label htmlFor="s">Бүтээгдэхүүн</label>
           <div className="row" style={{ gap: 6, flexWrap: "nowrap" }}>
             <input aria-label="Бараа хайх" placeholder="Хайх…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 120 }} />
             <select id="s" value={sid || ""} onChange={(e) => nav({ series: e.target.value, origin: undefined, run: undefined })}>
@@ -58,8 +58,7 @@ export default function Forecast({ params, user }) {
       {fc.loading && !f ? <Loading /> : f && (
         <>
           <div className="target-banner" aria-label="Таамаглалын тодорхойлолт">
-            <span className="target">{f.target_label}</span>
-            <span className="fact">Бараа <b>{seriesLabel(f.series)}</b></span>
+            <span className="fact">Бүтээгдэхүүн <b>{seriesLabel(f.series)}</b></span>
             {f.series.product_category && <span className="fact">Ангилал <b>{f.series.product_category}</b></span>}
             <span className="fact">Нэгж <b>{f.unit}</b></span>
             <span className="fact">Сүүлийн бүтэн сар <Help k="origin" /> <b>{monthLabel(f.origin_date)}</b></span>
@@ -147,7 +146,7 @@ function Summary({ f }) {
           {f.period_total.adjusted != null && <> Таны засвартай. Анхны таамаглал {fmt(f.period_total.forecast, 0)}.</>}</p>
         {flat && <p className="small muted">Улирлын хэлбэлзэл илрээгүй тул сар бүр ижил түвшин таамагласан.</p>}
         <p>Найдвартай байдал: <span className={`grade ${acc.tone}`}>{acc.label}</span> {acc.text}
-          {better !== null && better > 0 && <> Энгийн аргаас <b>{(better * 100).toFixed(0)}%</b> бага алддаг.</>}
+          {better !== null && better > 0 && <> Энгийн аргаас <b>{(better * 100).toFixed(0)}%</b> бага алдсан.</>}
           {period?.value != null && k > 1 && <> {PERIOD_OF[k]} нийт дүнгийн алдаа <b>{(period.value * 100).toFixed(0)}%</b>.</>} <Help k="WAPE" /></p>
       </div>
     </div>
@@ -234,17 +233,17 @@ function Metrics({ f }) {
   const wS = v("WAPE"), wB = v("WAPE", "base"), mae = v("MAE"), bias = v("Bias"), sum = v("SUM_APE");
   const lines = [];
   if (wS != null && wB != null) lines.push(wS <= wB
-    ? ["ok", "Энгийн аргаас сайн", `Энгийн аргаас ${Math.round((1 - wS / wB) * 100)}% бага алддаг.`]
-    : ["warn", "Энгийн аргаас муу", `Энгийн аргаас ${Math.round((wS / wB - 1) * 100)}% их алддаг. Болгоомжтой ашиглана уу.`]);
+    ? ["ok", "Суурь аргаас сайн", `Суурь аргаас ${Math.round((1 - wS / wB) * 100)}% бага алдсан.`]
+    : ["warn", "Суурь аргаас муу", `Суурь аргаас ${Math.round((wS / wB - 1) * 100)}% их алдсан. Болгоомжтой ашиглана уу.`]);
   if (mae != null) lines.push(["info", "Сарын зөрүү", `Сард дунджаар ±${fmt(mae, 0)} ${f.unit}.`]);
-  if (sum != null && f.horizon > 1) lines.push(["info", `${PERIOD_OF[f.horizon]} нийт`, `Дунджаар ${(sum * 100).toFixed(0)}% зөрдөг.`]);
+  if (sum != null && f.horizon > 1) lines.push(["info", `${PERIOD_OF[f.horizon]} нийт`, `Дунджаар ${(sum * 100).toFixed(0)}% зөрсөн.`]);
   if (bias != null && mae) {
     const r = bias / mae;
-    lines.push(["info", "Хазайлт", Math.abs(r) < 0.2 ? "Илүү, дутуу таамагладаггүй." : r > 0 ? "Ихэвчлэн илүү таамагладаг." : "Ихэвчлэн дутуу таамагладаг."]);
+    lines.push(["info", "Хазайлт", Math.abs(r) < 0.2 ? "Илүү эсвэл дутуу таамагладаггүй." : r > 0 ? "Ихэвчлэн илүү таамагласан." : "Ихэвчлэн дутуу таамагласан."]);
   }
   return (
     <div className="panel">
-      <h3 style={{ marginTop: 0 }}>Хэр найдвартай вэ?</h3>
+      <h3 style={{ marginTop: 0 }}>Найдвартай байдал</h3>
       <p className="small muted">Өнгөрсөн 12 сараар шалгасан.</p>
       <ul className="attn">{lines.map(([tone, tag, text]) => (
         <li key={tag}><span className={`badge ${tone}`}>{tag}</span><div className="what"><span style={{ color: "var(--ink)" }}>{text}</span></div></li>))}
@@ -252,7 +251,7 @@ function Metrics({ f }) {
       <details style={{ marginTop: 8 }}>
         <summary className="small muted">Дэлгэрэнгүй</summary>
         <table>
-          <thead><tr><th>Үзүүлэлт</th><th className="num">Сонгосон арга</th><th className="num">Энгийн арга <Help k="baseline" /></th></tr></thead>
+          <thead><tr><th>Үзүүлэлт</th><th className="num">Сонгосон арга</th><th className="num">Суурь арга <Help k="baseline" /></th></tr></thead>
           <tbody>{order.map((k) => (
             <tr key={k}><td>{METRIC_LABELS[k]} <Help k={k} /></td>
               {["sel", "base"].map((w) => {
@@ -335,7 +334,7 @@ function Explain({ runId, sid, horizon }) {
               <td className="small">{Object.entries(r.states).map(([k, n]) => `${STATES[k].label} ${n}`).join(", ")}</td></tr>))}
           </tbody>
         </table>
-        {ex.data.failures.length > 0 && <div className="notice warn">{ex.data.failures.length} удаа арга ажиллаагүй тул энгийн аргаар таамагласан.</div>}
+        {ex.data.failures.length > 0 && <div className="notice warn">{ex.data.failures.length} удаа арга ажиллаагүй тул суурь аргаар таамагласан.</div>}
       </div>
     </>
   );
