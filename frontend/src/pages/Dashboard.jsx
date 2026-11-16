@@ -41,9 +41,8 @@ export default function Dashboard({ user }) {
 
   return (
     <>
-      <h1>Сайн байна уу, {user.full_name || user.username}</h1>
+      <h1>Сайн байна уу, {user.full_name }</h1>
       <p className="muted">
-        {user.roles.map((r) => ROLE_LABELS[r]).join(", ")}
         {isManager && <> · салбар: <b>{branchText(user.branches)}</b></>}
       </p>
       <ErrorNote error={versions.error || exps.error} />
@@ -68,7 +67,6 @@ export default function Dashboard({ user }) {
       {running.length > 0 && (
         <>
           <h2>Ажиллаж байна</h2>
-          <p className="small muted">Хуудсаа хаасан ч үргэлжилнэ.</p>
           {running.map((j) => <JobProgress key={j.id} jobId={j.id} onDone={() => { jobs.reload(); versions.reload(); exps.reload(); }} />)}
         </>
       )}
@@ -158,11 +156,9 @@ function AdminHome({ user }) {
     <>
       <h1>Сайн байна уу, {user.full_name || user.username}</h1>
       <div className="intro">
-        <p>Гурван төрлийн хэрэглэгч байна:</p>
         <ol>
           {Object.entries(ROLE_LABELS).map(([k, l]) => <li key={k}><b>{l}</b>: {ROLE_DESC[k].charAt(0).toLowerCase() + ROLE_DESC[k].slice(1)}</li>)}
         </ol>
-        <p>Менежер зөвхөн өөрийн салбарыг харна.</p>
       </div>
       <button onClick={() => go("admin")}>Хэрэглэгч нэмэх</button>
     </>
