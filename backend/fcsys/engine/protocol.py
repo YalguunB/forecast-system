@@ -24,6 +24,7 @@ DEFAULT_PROTOCOL: dict = {
         {"name": "ets", "params": {"seasonal": "add"}},
         {"name": "ets", "params": {"seasonal": "add", "trend": "add", "damped": True}},
         {"name": "sarima", "params": {"order": [1, 1, 1], "seasonal_order": [0, 1, 1]}},
+        {"name": "combo", "params": {}},        # ETS, ETS+тренд, SARIMA-ийн дундаж (хосолсон таамаглал)
         {"name": "croston", "params": {"alpha": 0.1}},
         {"name": "sba", "params": {"alpha": 0.1}},
     ],

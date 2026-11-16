@@ -1,7 +1,8 @@
 """models — нэгдсэн интерфейстэй сарын загварууд (FR-M1, Z7, §4.4 «Загварын интерфейс»).
 
 Энэ хувилбарт: гулсах дундаж (суурь загвар), naive, улирлын naive (m = 12), ETS (үндсэн загвар),
-SARIMA, Croston, SBA. Prophet, XGBoost дараагийн үе шатанд ижил интерфейсээр нэмэгдэнэ.
+SARIMA, Croston, SBA, хосолсон таамаглал (combo = ETS, ETS+тренд, SARIMA-ийн дундаж).
+Prophet, XGBoost дараагийн үе шатанд ижил интерфейсээр нэмэгдэнэ.
 Цуваа нь сарын эхлэлээр индекслэгдсэн (MS); эхлэл o = мэдэгдэх сүүлийн сар; h = 1..H сар.
 """
 from __future__ import annotations
@@ -196,8 +197,47 @@ class SBA(Croston):
         super().fit(history, ctx)
 
 
+class Combination(Forecaster):
+    """Хосолсон таамаглал (Bates ба Granger, 1969; диплом §1.3 «Хосолсон загварууд»): бүрэлдэхүүн
+    загваруудын цэгэн таамаглалын энгийн дундаж. Жинг өгөгдлөөс үнэлэхгүй (тэнцүү жин) — богино цуваанд
+    жин үнэлэх нь алдааг нэмэгдүүлдэг. Ажиллаагүй бүрэлдэхүүнийг орхино; нэг нь ч ажиллаагүй бол алдаа
+    шидэж, дуудагч тал fallback руу шилжинэ. Интервал: бүрэлдэхүүний хязгааруудын дундаж (ойролцоолол)."""
+    name = "combo"
+    has_interval = True
+    DEFAULT_MEMBERS = (
+        {"name": "ets", "params": {"seasonal": "add"}},
+        {"name": "ets", "params": {"seasonal": "add", "trend": "add", "damped": True}},
+        {"name": "sarima", "params": {"order": [1, 1, 1], "seasonal_order": [0, 1, 1]}},
+    )
+
+    def fit(self, history, ctx):
+        self._fitted, self.member_errors = [], []
+        for spec in self.params.get("members") or self.DEFAULT_MEMBERS:
+            if spec["name"] == self.name:
+                raise ValueError("combo: бүрэлдэхүүн нь combo байж болохгүй")
+            m = make_model(spec["name"], spec.get("params"))
+            try:
+                m.fit(history, ctx)
+                self._fitted.append(m)
+            except AssertionError:
+                raise
+            except Exception as exc:               # noqa: BLE001
+                self.member_errors.append(f"{spec['name']}: {type(exc).__name__}")
+        if not self._fitted:
+            raise ValueError("combo: нэг ч бүрэлдэхүүн ажиллаагүй (" + "; ".join(self.member_errors) + ")")
+
+    def predict(self, ctx):
+        frames = [m.predict(ctx) for m in self._fitted]
+        y_hat = np.mean([f["y_hat"].values for f in frames], axis=0)
+        with_pi = [f for f in frames if f["q_lo"].notna().all()]
+        if not with_pi:
+            return self._frame(ctx, y_hat)
+        return self._frame(ctx, y_hat, np.mean([f["q_lo"].values for f in with_pi], axis=0),
+                           np.mean([f["q_hi"].values for f in with_pi], axis=0))
+
+
 MODEL_REGISTRY: dict[str, type[Forecaster]] = {
-    m.name: m for m in (MovingAverage, Naive, SeasonalNaive, ETS, SARIMA, Croston, SBA)
+    m.name: m for m in (MovingAverage, Naive, SeasonalNaive, ETS, SARIMA, Croston, SBA, Combination)
 }
 PLANNED_MODELS = ["prophet", "xgboost"]
 
