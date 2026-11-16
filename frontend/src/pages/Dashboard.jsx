@@ -1,7 +1,8 @@
 import { api } from "../api.js";
 import { go } from "../App.jsx";
 import { ErrorNote, JobProgress, Loading, useLoad } from "../components.jsx";
-import { EXP_STEPS, JOB_STATUS, JOB_TYPE, ROLE_DESC, ROLE_LABELS, branchText, pct, seriesLabel } from "../labels.js";
+import { EXP_STEPS, JOB_STATUS, JOB_TYPE, ROLE_DESC, ROLE_LABELS, accuracyLevel, branchText, fmt, monthLabel, pct, seriesLabel } from "../labels.js";
+import { biasText, trackGrade } from "./Tracking.jsx";
 
 export default function Dashboard({ user }) {
   const can = (...r) => r.some((x) => user.roles.includes(x));
@@ -41,9 +42,9 @@ export default function Dashboard({ user }) {
 
   return (
     <>
-      <h1>Сайн байна уу, {user.full_name }</h1>
+      <h1>Сайн байна уу, {user.full_name || user.username}</h1>
       <p className="muted">
-        {isManager && <> · салбар: <b>{branchText(user.branches)}</b></>}
+        {isManager ? <>Салбар: <b>{branchText(user.branches)}</b></> : "Бүх салбарын таамаглал, тайлан."}
       </p>
       <ErrorNote error={versions.error || exps.error} />
       {isManager && (!user.branches || user.branches.length === 0) && (
@@ -70,6 +71,8 @@ export default function Dashboard({ user }) {
           {running.map((j) => <JobProgress key={j.id} jobId={j.id} onDone={() => { jobs.reload(); versions.reload(); exps.reload(); }} />)}
         </>
       )}
+
+      {ready.length > 0 && <Headline exp={ready.find((e) => e.target === "demand") || ready[0]} />}
 
       <Attention failed={failed} ready={ready[0]} />
 
@@ -111,6 +114,52 @@ export default function Dashboard({ user }) {
           </div>
         </>
       )}
+    </>
+  );
+}
+
+// Хамгийн сүүлийн бэлэн таамаглалын гол дүн: ирэх 12 сарын нийт, найдвартай байдал, бодит гүйцэтгэл
+function Headline({ exp }) {
+  const rep = useLoad(() => api.get(`/reports/dashboard?experiment_id=${exp.id}&horizon=12`), [exp.id]);
+  const trk = useLoad(() => api.get(`/forecasts/tracking?experiment_id=${exp.id}&horizon=12`).catch(() => null), [exp.id]);
+  const r = rep.data;
+  if (!r) return rep.loading ? <p className="muted small">Гол дүнг тооцож байна…</p> : null;
+  const ss = r.series || [];
+  const units = [...new Set(ss.map((s) => s.unit).filter(Boolean))];
+  const oneUnit = units.length <= 1;                      // өөр нэгжтэй барааг нийлбэрлэхгүй
+  const ok = ss.every((s) => s.total_forecast !== null);
+  const total = ok ? ss.reduce((a, s) => a + s.total_forecast, 0) : null;
+  const lyOk = ss.every((s) => s.last_year !== null);
+  const ly = lyOk ? ss.reduce((a, s) => a + s.last_year, 0) : null;
+  const ch = total !== null && ly ? total / ly - 1 : null;
+  const a = accuracyLevel(r.kpi.wape_selected, r.kpi.wape_baseline);
+  const dem = r.experiment.target === "demand";
+  const whatGen = dem ? "эрэлтийн" : "борлуулалтын", whatWith = dem ? "эрэлттэй" : "борлуулалттай";
+  const t = trk.data?.available ? trk.data : null;
+  const fm = r.forecast_months;
+  return (
+    <>
+      <h2>Гол дүн: {exp.name}</h2>
+      <div className="summary">
+        {oneUnit && total !== null
+          ? <div className="big">{fmt(total, 0)}<small>{r.experiment.unit}, ирэх 12 сар</small></div>
+          : <div className="big">{ss.length}<small>барааны таамаглал</small></div>}
+        <div>
+          <p>{monthLabel(fm[0], true)} – {monthLabel(fm[fm.length - 1], true)}: {ss.length} барааны {whatGen} таамаглал
+            {oneUnit && ch !== null ? <>, өнгөрсөн 12 сараас <b>{ch >= 0 ? "+" : "−"}{Math.abs(ch * 100).toFixed(1)}%</b></> : null}.</p>
+          <p>Найдвартай байдал: <span className={`grade ${a.tone}`}>{a.label}</span> {a.text}{" "}
+            {r.kpi.share_improved !== null && <>Барааны {pct(r.kpi.share_improved)}-д энгийн аргаас сайн.</>}</p>
+          {t ? (
+            <p>Бодит гүйцэтгэл ({t.months_compared} сар): <span className={`grade ${trackGrade(t.overall.wape).tone}`}>{trackGrade(t.overall.wape).label}</span>{" "}
+              сарын алдаа <b>{pct(t.overall.wape)}</b>. {biasText(t.overall.bias)}</p>
+          ) : <p className="small muted">Шинэ сарын файл оруулмагц таамаглалыг бодит {whatWith} харьцуулна.</p>}
+          <div className="row" style={{ marginTop: 8 }}>
+            <button onClick={() => go("reports", { experiment: exp.id })}>Тайлан</button>
+            <button className="quiet" onClick={() => go("forecast", { experiment: exp.id })}>Бараагаар</button>
+            <button className="quiet" onClick={() => go("tracking", { experiment: exp.id })}>Гүйцэтгэл</button>
+          </div>
+        </div>
+      </div>
     </>
   );
 }

@@ -142,8 +142,11 @@ def update_protocol(eid: int, body: ProtocolIn, conn=Depends(get_conn, scope="fu
 
 
 @router.post("/experiments/{eid}/validate", status_code=202)
-def start_validation(eid: int, conn=Depends(get_conn, scope="function"), user=Depends(require("experiment"))):
-    """UC-04 алхам 4: протоколыг түгжиж (protocol_hash) validation ажлыг эхлүүлнэ."""
+def start_validation(eid: int, auto: bool = False, conn=Depends(get_conn, scope="function"),
+                     user=Depends(require("experiment"))):
+    """UC-04 алхам 4: протоколыг түгжиж (protocol_hash) validation ажлыг эхлүүлнэ.
+    auto = true бол нэг товшилтын урсгал: аргууд туршигдаж дуусмагц сонголт автоматаар түгжигдэж,
+    эцсийн шалгалт ба ирээдүйн таамаглал шууд эхэлнэ (менежер завсрын алхам бүрийг батлах шаардлагагүй)."""
     e = _exp(conn, eid, lock=True)
     require_monthly(e)
     active = conn.execute("SELECT id, status FROM governance.job WHERE type='validate' AND parent_id IS NULL "
@@ -159,9 +162,9 @@ def start_validation(eid: int, conn=Depends(get_conn, scope="function"), user=De
         raise ApiError(409, "invalid_state", "Аргуудыг одоо турших боломжгүй",
                        {"status": e["status"]})
     job = conn.execute("INSERT INTO governance.job (type, payload, created_by) VALUES ('validate', %s, %s) RETURNING id",
-                       (jsonb({"experiment_id": eid}), user["id"])).fetchone()
-    audit(conn, user["id"], "lock_protocol_start_validation", "experiment", eid, {"job_id": job["id"]})
-    return {"job_id": job["id"], "status": "validating"}
+                       (jsonb({"experiment_id": eid, "auto": auto}), user["id"])).fetchone()
+    audit(conn, user["id"], "lock_protocol_start_validation", "experiment", eid, {"job_id": job["id"], "auto": auto})
+    return {"job_id": job["id"], "status": "validating", "auto": auto}
 
 
 @router.get("/experiments/{eid}/selection")

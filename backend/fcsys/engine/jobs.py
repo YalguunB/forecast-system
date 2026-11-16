@@ -468,6 +468,27 @@ def handle_forecast_batch(conn, job: dict, url: str) -> None:
                             "undefined_reason"]].itertuples(index=False, name=None))
 
 
+def lock_selection(conn, eid: int, user_id: int | None, auto: bool = False) -> str:
+    """Сонголтыг түгжинэ (selection_hash). Туршилт validation_done төлөвт байх ёстой."""
+    e = conn.execute("SELECT protocol_hash FROM experiment.experiment WHERE id=%s", (eid,)).fetchone()
+    sel = conn.execute("SELECT series_id, horizon, run_id, rule FROM experiment.model_selection WHERE experiment_id=%s "
+                       "ORDER BY series_id, horizon", (eid,)).fetchall()
+    shash = canonical_hash({"protocol_hash": e["protocol_hash"], "selection": [dict(r) for r in sel]})
+    conn.execute("UPDATE experiment.experiment SET status='locked', selection_hash=%s, locked_at=now() WHERE id=%s",
+                 (shash, eid))
+    audit(conn, user_id, "lock_selection", "experiment", eid, {"selection_hash": shash, "n": len(sel), "auto": auto})
+    return shash
+
+
+def start_test(conn, eid: int, user_id: int | None, auto: bool = False) -> int:
+    """Эцсийн шалгалт + ирээдүйн таамаглалын ажил үүсгэнэ. test_job_id нэг л удаа тогтоно (DB trigger)."""
+    jid = conn.execute("INSERT INTO governance.job (type, payload, created_by) VALUES ('test', %s, %s) RETURNING id",
+                       (jsonb({"experiment_id": eid, "auto": auto}), user_id)).fetchone()["id"]
+    conn.execute("UPDATE experiment.experiment SET test_job_id=%s WHERE id=%s", (jid, eid))
+    audit(conn, user_id, "start_test", "experiment", eid, {"job_id": jid, "auto": auto})
+    return jid
+
+
 def maybe_finalize(conn, parent_id: int) -> int | None:
     """Бүх хүүхэд дууссан бол finalize ажил нэг удаа үүсгэнэ (эцэг мөрийг түгжинэ)."""
     parent = conn.execute("SELECT * FROM governance.job WHERE id=%s FOR UPDATE", (parent_id,)).fetchone()
@@ -530,6 +551,13 @@ def handle_finalize(conn, job: dict, url: str) -> None:
                           None if r.score is None or (isinstance(r.score, float) and np.isnan(r.score)) else r.score))
         conn.execute("UPDATE experiment.experiment SET status='validation_done' WHERE id=%s", (eid,))
         audit(conn, parent["created_by"], "validation_done", "experiment", eid, {"selections": len(sel)})
+        if parent["payload"].get("auto"):
+            # Нэг товшилтын урсгал: сонголтыг шууд түгжиж, эцсийн шалгалт + таамаглалыг эхлүүлнэ.
+            # Дүрэм хэвээр: сонголт зөвхөн validation-аас, түгжсэний дараа тест нэг л удаа (trigger).
+            shash = lock_selection(conn, eid, parent["created_by"], auto=True)
+            start_test(conn, eid, parent["created_by"], auto=True)
+            conn.execute("UPDATE governance.job SET progress = progress || %s WHERE id=%s",
+                         (jsonb({"selection_hash": shash}), parent["id"]))
     else:
         conn.execute("UPDATE experiment.experiment SET status='test_done' WHERE id=%s", (eid,))
         audit(conn, parent["created_by"], "test_done", "experiment", eid, {})

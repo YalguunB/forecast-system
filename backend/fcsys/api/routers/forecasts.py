@@ -223,3 +223,130 @@ def explain(run_id: int, series: int, conn=Depends(get_conn, scope="function"), 
             "state_labels": STATE_LABELS,
             "feature_behaviour": {"available": False,
                                   "note": ""}}
+
+
+def _newer_version(conn, e: dict) -> dict | None:
+    """Ижил багцын, туршилтын өгөгдлөөс хойших огноотой хамгийн сүүлийн бэлэн (архивлаагүй) файл."""
+    return conn.execute(
+        "SELECT v.id, v.version_no, v.date_max, v.file_name FROM raw.dataset_version v "
+        "JOIN raw.dataset_version v0 ON v0.dataset_id = v.dataset_id WHERE v0.id=%s AND v.status='validated' "
+        "AND v.archived_at IS NULL AND v.date_max > v0.date_max ORDER BY v.date_max DESC, v.id DESC LIMIT 1",
+        (e["dataset_version_id"],)).fetchone()
+
+
+@router.get("/forecasts/tracking")
+def forecast_tracking(experiment_id: int, horizon: int = Query(12),
+                      conn=Depends(get_conn, scope="function"), user=Depends(require("forecast_view"))):
+    """FR-05, FR-15: таамаглал гаргаснаас хойш бодит өгөгдөл ирсэн саруудад таамаглалыг бодит утгатай харьцуулна.
+
+    Бодит утга нь ижил багцад дараа нь оруулсан файлаас (шинэ хувилбар) ижил зорилтоор (борлуулалт / эрэлт)
+    тооцогдоно. Бодит утга бүрдээгүй сард алдааг тэг гэж үзэхгүй — тэр сар харьцуулалтад орохгүй (NFR-13).
+    Гараар зассан утга байвал «эцсийн» таамаглал нь засвар; системийн анхны утга тусад нь хадгалагдана."""
+    if horizon not in HORIZONS:
+        raise ApiError(422, "invalid_params", "Хугацаа буруу байна")
+    e = _exp(conn, experiment_id)
+    origin = last_complete_month(e["date_max"])
+    base = {"experiment": {"id": e["id"], "name": e["name"], "target": e["target"],
+                           "target_label": TARGET_LABELS[e["target"]], "dataset": e["dataset"]},
+            "origin_date": origin.date(), "horizon": horizon, "period_label": PERIOD_LABELS[horizon]}
+    if e["status"] != "test_done":
+        return {**base, "available": False, "reason": "not_ready",
+                "message": "Таамаглал бэлэн болоогүй байна."}
+    nv = _newer_version(conn, e)
+    if not nv:
+        return {**base, "available": False, "reason": "no_new_data",
+                "message": "Таамагласан саруудын бодит борлуулалт хараахан ороогүй байна. "
+                           "Шинэ сарын файлаа ижил багцад оруулмагц энд харьцуулалт гарна."}
+    sc, sp = scope_sql(user)
+    rows = conn.execute(
+        "SELECT ms.series_id, s.product_id, s.product_name, s.product_category, s.branch_id, s.unit, lr.run_id, lr.model, "
+        "fv.h, fv.target_date, fv.y_hat FROM experiment.model_selection ms "
+        "JOIN experiment.run sr ON sr.run_id = ms.run_id "
+        "JOIN experiment.run lr ON lr.experiment_id = ms.experiment_id AND lr.phase='live' AND lr.model = sr.model "
+        " AND lr.params = sr.params "
+        "JOIN forecast.forecast_value fv ON fv.run_id = lr.run_id AND fv.series_id = ms.series_id AND fv.split='live' "
+        "JOIN curated.series s ON s.id = ms.series_id "
+        "WHERE ms.experiment_id=%s AND ms.horizon=%s AND fv.h <= %s" + sc + " ORDER BY ms.series_id, fv.h",
+        [experiment_id, horizon, horizon, *sp]).fetchall()
+    if not rows:
+        return {**base, "available": False, "reason": "no_forecast", "message": "Таамаглал алга."}
+    adj = {(a["run_id"], a["series_id"], a["target_date"]): a["adjusted_value"] for a in conn.execute(
+        "SELECT DISTINCT ON (a.run_id, a.series_id, a.target_date) a.run_id, a.series_id, a.target_date, a.adjusted_value "
+        "FROM governance.forecast_adjustment a JOIN experiment.run r ON r.run_id=a.run_id WHERE r.experiment_id=%s "
+        "ORDER BY a.run_id, a.series_id, a.target_date, a.created_at DESC", (experiment_id,)).fetchall()}
+    sids = sorted({r["series_id"] for r in rows})
+    daily = load_daily(conn, nv["id"], sids)
+    new_last = last_complete_month(nv["date_max"])
+    actual: dict[int, pd.DataFrame] = {
+        sid: build_monthly(d, e["target"], nv["date_max"]) for sid, d in daily.items()}
+
+    items: dict[int, dict] = {}
+    months: dict = {}
+    for r in rows:
+        m = pd.Timestamp(r["target_date"])
+        it = items.setdefault(r["series_id"], {
+            "series_id": r["series_id"], "product_id": r["product_id"], "product_name": r["product_name"],
+            "product_category": r["product_category"], "branch_id": r["branch_id"], "unit": r["unit"],
+            "model": r["model"], "months": []})
+        if m > new_last:
+            continue                                      # бодит өгөгдөл бүрдээгүй сар
+        tab = actual.get(r["series_id"])
+        y, why = None, "шинэ файлд энэ бараа алга"
+        if tab is not None and m in tab.index:
+            v = tab.loc[m, "y"]
+            y, why = (None, tab.loc[m, "reason"]) if pd.isna(v) else (float(v), None)
+        final = adj.get((r["run_id"], r["series_id"], r["target_date"]))
+        it["months"].append({"month": r["target_date"], "h": r["h"], "forecast": float(r["y_hat"]),
+                             "adjusted": None if final is None else float(final), "actual": y, "reason": why})
+
+    def score(pairs: list[tuple[float, float]]) -> dict:
+        """pairs: (таамаглал, бодит). WAPE = Σ|ŷ − y| / Σy; хазайлт = (Σŷ − Σy) / Σy."""
+        if not pairs:
+            return {"n": 0, "forecast": None, "actual": None, "abs_error": None, "wape": None, "bias": None}
+        f = sum(p[0] for p in pairs)
+        y = sum(p[1] for p in pairs)
+        ae = sum(abs(p[0] - p[1]) for p in pairs)
+        return {"n": len(pairs), "forecast": f, "actual": y, "abs_error": ae,
+                "wape": ae / y if y > 0 else None, "bias": (f - y) / y if y > 0 else None}
+
+    all_pairs, sys_pairs, out = [], [], []
+    for it in items.values():
+        pairs = [((x["adjusted"] if x["adjusted"] is not None else x["forecast"]), x["actual"])
+                 for x in it["months"] if x["actual"] is not None]
+        spairs = [(x["forecast"], x["actual"]) for x in it["months"] if x["actual"] is not None]
+        it["score"] = score(pairs)
+        it["system_score"] = score(spairs) if any(x["adjusted"] is not None for x in it["months"]) else None
+        all_pairs += pairs
+        sys_pairs += spairs
+        for x in it["months"]:
+            if x["actual"] is None:
+                continue
+            mm = months.setdefault(x["month"], {"month": x["month"], "forecast": 0.0, "actual": 0.0, "abs_error": 0.0, "n": 0})
+            f = x["adjusted"] if x["adjusted"] is not None else x["forecast"]
+            mm["forecast"] += f
+            mm["actual"] += x["actual"]
+            mm["abs_error"] += abs(f - x["actual"])
+            mm["n"] += 1
+        out.append(it)
+    month_rows = []
+    for k in sorted(months):
+        mm = months[k]
+        mm["wape"] = mm["abs_error"] / mm["actual"] if mm["actual"] > 0 else None
+        month_rows.append(mm)
+    n_months = months_between_incl(origin, min(new_last, add_months(origin, horizon)))
+    out.sort(key=lambda it: -(it["score"]["abs_error"] or 0))
+    units = sorted({it["unit"] for it in out})
+    return {**base, "available": bool(all_pairs), "reason": None if all_pairs else "no_complete_month",
+            "message": None if all_pairs else "Шинэ файлд таамагласан сараас бүтэн дууссан сар алга.",
+            "actual_version": {"id": nv["id"], "version_no": nv["version_no"], "file_name": nv["file_name"],
+                               "date_max": nv["date_max"], "last_complete_month": new_last.date()},
+            "months_compared": n_months, "months_total": horizon,
+            "unit": units[0] if len(units) == 1 else None,
+            "overall": score(all_pairs),
+            "system_overall": score(sys_pairs) if adj else None,
+            "by_month": month_rows, "items": out}
+
+
+def months_between_incl(origin: pd.Timestamp, last: pd.Timestamp) -> int:
+    """origin-оос хойших, last хүртэлх (оруулаад) сарын тоо."""
+    return max(0, (last.year - origin.year) * 12 + (last.month - origin.month))

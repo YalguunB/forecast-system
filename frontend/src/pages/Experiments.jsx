@@ -11,7 +11,7 @@ export default function Experiments({ params }) {
 function List() {
   const exps = useLoad(() => api.get("/experiments"), []);
   const versions = useLoad(() => api.get("/dataset-versions"), []);
-  const [form, setForm] = useState({ name: "", version: "", target: null, max_series: 200, level: "global", models: null, cats: [] });
+  const [form, setForm] = useState({ name: "", version: "", target: null, max_series: 200, level: "global", models: null, cats: [], manual: false });
   const [err, setErr] = useState(null);
   const usable = (versions.data || []).filter((v) => v.status === "validated" && !v.archived_at);
   const vid = form.version || usable[0]?.id;
@@ -32,6 +32,9 @@ function List() {
     };
     try {
       const e = await api.post("/experiments", { name: form.name, dataset_version_id: Number(vid), target, protocol });
+      // Нэг товшилт: аргуудыг турших → сонгох → шалгах → таамаглах бүгд дараалан автоматаар явагдана.
+      // «Алхам бүрийг өөрөө батлах» сонгосон бол зөвхөн үүсгээд дэлгэрэнгүй хуудсанд алхам алхмаар үргэлжлүүлнэ.
+      if (!form.manual) await api.post(`/experiments/${e.id}/validate?auto=true`);
       go("experiments", { id: e.id });
     } catch (x) { setErr(x); }
   };
@@ -108,8 +111,13 @@ function List() {
               </div>
             </>
           )}
+          <label style={{ display: "flex", gap: 6, marginTop: 10 }}>
+            <input type="checkbox" checked={form.manual} onChange={(e) => setForm({ ...form, manual: e.target.checked })} />
+            Алхам бүрийг өөрөө батлах
+          </label>
           </details>
-          <button style={{ marginTop: 12 }} disabled={!form.name || !usable.length || !defaults.data || (info && info.full_months < (info.min_months || 18))} onClick={create}>Үүсгэх</button>
+          <p className="small muted" style={{ margin: "0.6rem 0 0" }}>Систем аргуудыг өнгөрсөн саруудад туршиж, хамгийн бага алдсаныг сонгоод ирэх 12 сарыг таамаглана. Хэдэн минут болно.</p>
+          <button style={{ marginTop: 8 }} disabled={!form.name || !usable.length || !defaults.data || (info && info.full_months < (info.min_months || 18))} onClick={create}>{form.manual ? "Үүсгэх" : "Таамаглал гаргуулах"}</button>
           {!usable.length && <p className="small muted">Эхлээд өгөгдөл оруулж шалгана уу.</p>}
           <ErrorNote error={err} />
         </div>
@@ -146,8 +154,12 @@ function Detail({ id }) {
       <div className="panel">
         {e.status === "draft" && (
           <>
-            <h3 style={{ marginTop: 0 }}>1. Аргуудыг турших</h3>
-            <button onClick={() => act(async () => setJob((await api.post(`/experiments/${id}/validate`)).job_id))}>Аргуудыг турших</button>
+            <h3 style={{ marginTop: 0 }}>Таамаглал гаргуулах</h3>
+            <p>Систем аргуудыг туршиж, сонгоод, шалгаад таамаглалыг бэлэн болгоно.</p>
+            <div className="row">
+              <button onClick={() => act(async () => setJob((await api.post(`/experiments/${id}/validate?auto=true`)).job_id))}>Эхлүүлэх</button>
+              <button className="quiet" onClick={() => act(async () => setJob((await api.post(`/experiments/${id}/validate`)).job_id))}>Алхам алхмаар (зөвхөн аргуудыг турших)</button>
+            </div>
           </>
         )}
         {e.status === "validating" && !activeJob && (
@@ -171,13 +183,14 @@ function Detail({ id }) {
             <button className="warn" onClick={() => act(async () => setJob((await api.post(`/experiments/${id}/test`)).job_id))}>Эхлүүлэх</button>
           </>
         )}
-        {e.status === "locked" && e.test_job_id && activeJob && <p style={{ margin: 0 }}>Таамаглал гарч байна…</p>}
+        {e.status === "locked" && e.test_job_id && activeJob && <p style={{ margin: 0 }}>Сонгосон аргыг шалгаж, таамаглал гаргаж байна…</p>}
         {e.status === "test_done" && (
           <>
             <h3 style={{ marginTop: 0 }}>Таамаглал бэлэн ✓</h3>
             <div className="row">
               <button onClick={() => go("reports", { experiment: id })}>Тайлан</button>
               <button className="quiet" onClick={() => go("forecast", { experiment: id })}>Бараагаар харах</button>
+              <button className="quiet" onClick={() => go("tracking", { experiment: id })}>Гүйцэтгэл</button>
               <button className="quiet" onClick={() => api.download(`/experiments/${id}/report?format=xlsx`, `experiment_${id}_report.xlsx`)}>Дэлгэрэнгүй тайлан (Excel)</button>
             </div>
           </>

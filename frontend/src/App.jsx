@@ -9,6 +9,7 @@ import Experiments from "./pages/Experiments.jsx";
 import Forecast from "./pages/Forecast.jsx";
 import Compare from "./pages/Compare.jsx";
 import Reports from "./pages/Reports.jsx";
+import Tracking from "./pages/Tracking.jsx";
 import Admin from "./pages/Admin.jsx";
 
 // n: менежерийн ажлын дарааллын дугаар (цэсэнд харагдана)
@@ -19,6 +20,7 @@ const SCREENS = [
   { path: "experiments", n: 3, title: "Таамаглал гаргуулах", roles: ["manager"], el: Experiments },
   { path: "forecast", n: 4, title: "Барааны таамаглал", roles: ["executive", "manager"], el: Forecast },
   { path: "reports", title: "Тайлан", roles: ["executive", "manager"], el: Reports },
+  { path: "tracking", title: "Гүйцэтгэл", roles: ["executive", "manager"], el: Tracking },
   { path: "compare", title: "Аргуудын харьцуулалт", roles: ["executive", "manager"], el: Compare },
   { path: "admin", title: "Хэрэглэгч ба эрх", roles: ["admin"], el: Admin },
 ];
