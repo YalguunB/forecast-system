@@ -20,8 +20,8 @@ export default function Forecast({ params, user }) {
   const horizon = H_LIST.some(([h]) => h === Number(params.h)) ? Number(params.h) : H_LIST[H_LIST.length - 1][0];
   const split = params.split || "live";
   const origin = params.origin;
-  const fc = useLoad(() => (eid && sid ? api.get(`/forecasts?experiment_id=${eid}&series=${sid}&horizon=${horizon}&split=${split}${origin ? `&origin_date=${origin}` : ""}${params.run ? `&run_id=${params.run}` : ""}`) : Promise.resolve(null)),
-    [eid, sid, horizon, split, origin, params.run]);
+  const fc = useLoad(() => (exps.data && eid && sid ? api.get(`/forecasts?experiment_id=${eid}&series=${sid}&horizon=${horizon}&split=${split}${origin ? `&origin_date=${origin}` : ""}${params.run ? `&run_id=${params.run}` : ""}`) : Promise.resolve(null)),
+    [!!exps.data, eid, sid, horizon, split, origin, params.run]);
   const nav = (patch) => go("forecast", { experiment: eid, series: sid, h: horizon, split, origin, run: params.run, ...patch });
   const isManager = user.roles.includes("manager");
   const canExport = ["executive", "manager"].some((r) => user.roles.includes(r));
