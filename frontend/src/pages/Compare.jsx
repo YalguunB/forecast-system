@@ -4,7 +4,7 @@ import { go } from "../App.jsx";
 import { ErrorNote, Help, Loading, Plot, plotLayout, useLoad } from "../components.jsx";
 import { runName, seriesLabel, HORIZONS, MODEL_LABELS, fmt, monthLabel, pct, PERIOD_OF } from "../labels.js";
 
-const PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"];
+const PALETTE = ["#146ef5", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"];
 const runLabel = (r) => (MODEL_LABELS[r.model] || r.model) + (r.model === "ets" && r.params?.trend ? " (өсөлттэй)" : "") + (r.role === "baseline" ? " (энгийн арга)" : "");
 const CLASS = { smooth: ["Тогтвортой", "Сар бүр жигд зарагддаг"], erratic: ["Хэлбэлзэлтэй", "Сар бүр, гэхдээ тогтворгүй"],
   intermittent: ["Тасалдалтай", "Зарим сард огт зарагддаггүй"], lumpy: ["Бөөгнөрсөн", "Ховор, их хэмжээгээр"], unknown: ["Тодорхойгүй", "Өгөгдөл хүрэлцээгүй"] };

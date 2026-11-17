@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { session } from "./api.js";
 import { ROLE_LABELS, branchText } from "./labels.js";
 import Login from "./pages/Login.jsx";
@@ -24,6 +24,21 @@ const SCREENS = [
   { path: "compare", title: "Аргуудын харьцуулалт", roles: ["executive", "manager"], el: Compare },
   { path: "admin", title: "Хэрэглэгч ба эрх", roles: ["admin"], el: Admin },
 ];
+
+const initials = (n) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
+
+// Тэмдэг: өсөх гурван багана, сүүлийнх нь таамаглал (тасархай)
+export function Mark() {
+  return (
+    <span className="mark" aria-hidden="true">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <rect x="1.5" y="9" width="3" height="5.5" rx="1" fill="currentColor" />
+        <rect x="6.5" y="5.5" width="3" height="9" rx="1" fill="currentColor" />
+        <rect x="11.5" y="2" width="3" height="12.5" rx="1" stroke="currentColor" strokeWidth="1.2" strokeDasharray="2 1.6" />
+      </svg>
+    </span>
+  );
+}
 
 function parseHash() {
   const [path, query = ""] = window.location.hash.replace(/^#\/?/, "").split("?");
@@ -51,21 +66,28 @@ export default function App() {
   const El = screen.el;
   return (
     <div className="shell">
-      <nav className="rail" aria-label="Үндсэн цэс">
-        <div className="brand">Таамаглалын систем</div>
-        {visible.map((x) => (
-          <a key={x.path} href={`#/${x.path}`} className={x === screen ? "active" : ""}
-             aria-current={x === screen ? "page" : undefined}>
-            {x.n && roles.includes("manager") ? <span className="step-n" aria-hidden="true">{x.n}</span> : null}{x.title}
-          </a>
-        ))}
+      <header className="topbar">
+        <a className="brand" href="#/dashboard"><Mark />Таамаглал</a>
+        <nav className="nav" aria-label="Үндсэн цэс">
+          {visible.map((x, i) => (
+            <Fragment key={x.path}>
+              {/* Менежерийн 4 алхмын дараа бусад хуудсыг зураасаар тусгаарлана */}
+              {i > 0 && !x.n && visible[i - 1].n && <span className="sep" aria-hidden="true" />}
+              <a href={`#/${x.path}`} className={x === screen ? "active" : ""} aria-current={x === screen ? "page" : undefined}>
+                {x.n && roles.includes("manager") ? <span className="step-n" aria-hidden="true">{x.n}</span> : null}{x.title}
+              </a>
+            </Fragment>
+          ))}
+        </nav>
         <div className="who">
-          {s.user.full_name || s.user.username}
-          <div>{roles.map((r) => ROLE_LABELS[r]).join(", ")}</div>
-          {roles.includes("manager") && <div>Салбар: {branchText(s.user.branches)}</div>}
+          <span className="avatar" aria-hidden="true">{initials(s.user.full_name || s.user.username)}</span>
+          <span className="id">
+            <b>{s.user.full_name || s.user.username}</b>
+            <span>{roles.map((r) => ROLE_LABELS[r]).join(", ")}{roles.includes("manager") ? `, ${branchText(s.user.branches).toLowerCase()}` : ""}</span>
+          </span>
           <button onClick={() => { session.clear(); setS(null); go("login"); }}>Гарах</button>
         </div>
-      </nav>
+      </header>
       <main><El params={route.params} user={s.user} /></main>
     </div>
   );

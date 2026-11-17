@@ -68,7 +68,7 @@ export const plotLayout = (extra = {}) => ({
   margin: { l: 48, r: 12, t: 8, b: 36 },
   paper_bgcolor: "rgba(0,0,0,0)",
   plot_bgcolor: "rgba(0,0,0,0)",
-  font: { family: "Golos Text, system-ui", size: 12, color: getComputedStyle(document.documentElement).getPropertyValue("--ink-2") || "#4a5a63" },
+  font: { family: "Onest, system-ui", size: 12, color: getComputedStyle(document.documentElement).getPropertyValue("--ink-2") || "#4a5a63" },
   xaxis: { gridcolor: "rgba(128,140,150,0.15)", zeroline: false },
   yaxis: { gridcolor: "rgba(128,140,150,0.15)", zeroline: false, rangemode: "tozero" },
   legend: { orientation: "h", y: -0.18 },
