@@ -231,10 +231,17 @@ def quality_report(vid: int, conn=Depends(get_conn, scope="function"), user=Depe
         r["issues"] = is_map.get(r["series_id"], {}).get("n", 0)
         r["corrected"] = is_map.get(r["series_id"], {}).get("corrected", 0)
     blocking_open = sum(r["n"] for r in by_rule if r["severity"] == "blocking" and r["action"] == "open")
+    # Хамгийн сүүлийн оруулах/засварын ажил: «Шалгаж байна» дээр гацсан үед шалтгааныг харуулахад
+    job = conn.execute(
+        "SELECT id, type, status, error, progress, created_at, started_at, finished_at, "
+        "extract(epoch FROM now() - created_at)::int AS age_s FROM governance.job "
+        "WHERE type IN ('import','regrid') AND (payload->>'version_id')::bigint = %s ORDER BY id DESC LIMIT 1", (vid,)).fetchone()
+    if job and job["error"]:
+        job["error"] = job["error"].split("\n")[0][:400]      # traceback биш, эхний мөр л
     return {"version": {"id": v["id"], "status": v["status"], "row_count": v["row_count"],
                         "date_min": v["date_min"], "date_max": v["date_max"], "dataset": v["dataset"]},
             "usable": v["status"] == "validated" and blocking_open == 0,
-            "blocking_open": blocking_open, "by_rule": by_rule, "by_series": by_series}
+            "blocking_open": blocking_open, "by_rule": by_rule, "by_series": by_series, "job": job}
 
 
 @router.get("/dataset-versions/{vid}/issues")

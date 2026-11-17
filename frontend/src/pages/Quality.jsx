@@ -30,7 +30,9 @@ export default function Quality({ params, user }) {
         </div>
       </div>
       <ErrorNote error={report.error} />
-      {report.loading ? <Loading /> : report.data && (
+      {report.loading ? <Loading /> : report.data && report.data.version.status === "imported" ? (
+        <ImportState r={report.data} onDone={() => { report.reload(); versions.reload(); issues.reload(); }} />
+      ) : report.data && (
         <>
           {report.data.usable && fullMonths(report.data.version) < 18
             ? <div className="status-bar warn" role="status"><b>Хугацаа богино</b><p>Энэ файлд {fullMonths(report.data.version)} сарын борлуулалт байна. Дор хаяж 18 сар хэрэгтэй.</p></div>
@@ -258,4 +260,32 @@ function DayCalendar({ vid, s }) {
       )}
     </div>
   );
+}
+
+// Файл «Шалгаж байна» төлөвт удаан үлдвэл яагаад гэдгийг хэлнэ: ажил дараалалд хүлээгдэж байна (worker ажиллахгүй),
+// ажиллаж байна, эсвэл алдаатай дууссан.
+function ImportState({ r, onDone }) {
+  const j = r.job;
+  if (j && j.status === "failed")
+    return (
+      <div className="status-bar bad" role="alert"><b>Шалгалт амжилтгүй боллоо</b>
+        <p>{j.error || "Тодорхойгүй алдаа."} Файлаа шалгаад дахин оруулна уу.</p>
+        <button className="quiet" onClick={() => go("import")}>Дахин оруулах</button>
+      </div>);
+  if (j && j.status === "cancelled")
+    return (
+      <div className="status-bar warn" role="status"><b>Шалгалтыг цуцалсан</b>
+        <p>Файлаа дахин оруулна уу.</p><button className="quiet" onClick={() => go("import")}>Дахин оруулах</button></div>);
+  if (!j || (j.status === "queued" && j.age_s > 20))
+    return (
+      <div className="status-bar warn" role="status"><b>Шалгалт эхлээгүй байна</b>
+        <p>Тооцоолол хийдэг хэсэг (worker) ажиллахгүй байна. Тусдаа терминалд <code>python -m fcsys.engine.worker</code>
+          {" "}командыг ажиллуулна уу. Ажиллаж эхэлмэгц шалгалт өөрөө эхэлнэ.</p>
+        <button className="quiet" onClick={onDone}>Дахин шалгах</button>
+      </div>);
+  return (
+    <div className="panel">
+      <b>Файлыг шалгаж байна</b>
+      <JobProgress jobId={j.id} onDone={onDone} />
+    </div>);
 }
