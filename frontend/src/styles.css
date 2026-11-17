@@ -43,7 +43,8 @@ html, body { margin: 0; }
 body {
   background: var(--paper); color: var(--ink);
   font: 400 var(--step-1)/1.55 "Onest", system-ui, sans-serif;
-  font-variant-numeric: tabular-nums;
+  /* Onest-ийн тэгш өргөнтэй цифрт «1» нарийн тул «12», «17» тусдаа мэт харагддаг байв:
+     энгийн бичвэрт пропорциональ цифр, зөвхөн хүснэгтийн тоон баганад тэгш өргөнтэй */
   -webkit-font-smoothing: antialiased;
 }
 a { color: var(--sky); text-underline-offset: 2px; }
@@ -137,7 +138,7 @@ table { border-collapse: collapse; width: 100%; font-size: var(--step-0); }
 th { text-align: left; font-weight: 600; color: var(--ink-3); border-bottom: 1px solid var(--line); padding: 0.6rem 0.65rem; white-space: nowrap; font-size: 0.8rem; }
 td { border-bottom: 1px solid var(--line); padding: 0.7rem 0.65rem; vertical-align: top; }
 tbody tr:last-child td { border-bottom: 0; }
-td.num, th.num { text-align: right; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 tr.clickable { cursor: pointer; }
 tr.clickable:hover td { background: var(--surface-2); }
 td.clip { max-width: 28rem; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
