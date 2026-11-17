@@ -19,6 +19,8 @@ ap.add_argument("--train-origins", type=int, default=24, help="эхлэлийн 
 ap.add_argument("--rounds", type=int, default=400)
 ap.add_argument("--seed", type=int, default=20261117)
 ap.add_argument("--origins", default="test", help="test | all")
+ap.add_argument("--target", default="raw", choices=["raw", "ratio"],
+                help="raw: ширхгээр (tweedie); ratio: сүүлийн 12 сарын дундажид харьцуулсан (түвшин, трендэд тэсвэртэй)")
 a = ap.parse_args()
 d = Path(a.data)
 mon = pd.read_parquet(d / "m5_monthly.parquet")
@@ -30,7 +32,7 @@ P = mon.pivot(index="id", columns="month", values="price").loc[ids].to_numpy(flo
 cats = {c: meta[c].astype("category").cat.codes.to_numpy() for c in ("dept_id", "cat_id", "store_id", "state_id")}   # item_id: өндөр кардиналтай, хэт тааруулдаг
 N, T = Y.shape
 FEATS = [f"lag{k}" for k in range(12)] + ["mean3", "mean6", "mean12", "std12", "zero12", "ly", "ly2", "age",
-                                          "price", "price_rel", "tmonth", "h"] + list(cats)
+                                          "price", "price_rel", "tmonth", "h"] + list(cats) + ["log_scale"]
 
 
 def feats(rows, t, h):
@@ -49,8 +51,14 @@ def feats(rows, t, h):
             "tmonth": np.full(len(rows), (months[t].month - 1 + h) % 12 + 1),
             "h": np.full(len(rows), h),
         }
-    X = np.column_stack([lags] + [f[k] for k in FEATS[12:24]] + [cats[c][rows] for c in cats]).astype(np.float32)
-    return X
+    sc = np.nan_to_num(f["mean12"], nan=0.0) + 1.0
+    if a.target == "ratio":                     # түвшний шинжийг масштабаар хувааж, масштабыг тусад нь өгнө
+        lags = lags / sc[:, None]
+        for k in ("mean3", "mean6", "mean12", "std12", "ly", "ly2"):
+            f[k] = f[k] / sc
+    X = np.column_stack([lags] + [f[k] for k in FEATS[12:24]] + [cats[c][rows] for c in cats]
+                        + [np.log1p(sc)]).astype(np.float32)
+    return X, sc
 
 
 test_start = months.get_loc(pd.Timestamp("2015-06-01"))
@@ -71,18 +79,20 @@ for t0 in t_list:
                 break
             y = Y[train_rows, t + h]
             ok = ~np.isnan(y)
-            Xs.append(feats(train_rows[ok], t, h)); ys.append(y[ok])
+            X_, sc_ = feats(train_rows[ok], t, h)
+            Xs.append(X_); ys.append(y[ok] / sc_ if a.target == "ratio" else y[ok])
     X, yv = np.vstack(Xs), np.concatenate(ys)
     ds = lgb.Dataset(X, yv, feature_name=FEATS, categorical_feature=list(cats), free_raw_data=True)
     model = lgb.train(params, ds, num_boost_round=a.rounds)
     allr = np.arange(N)
     for h in range(1, 13):
-        yh = np.clip(model.predict(feats(allr, t0, h)), 0, None)
+        X_, sc_ = feats(allr, t0, h)
+        yh = np.clip(model.predict(X_) * (sc_ if a.target == "ratio" else 1.0), 0, None)
         out.append(pd.DataFrame({"id": ids, "origin": months[t0], "h": h,
                                  "target": months[t0] + pd.DateOffset(months=h), "y_hat": yh}))
     print(f"эхлэл {months[t0].date()}: {len(yv):,} мөр, {time.time() - tic:.0f} с", flush=True)
 res = pd.concat(out, ignore_index=True)
-res.to_parquet(d / "lgbm_forecasts.parquet", index=False)
+res.to_parquet(d / ("lgbm_forecasts.parquet" if a.target == "raw" else "lgbm_ratio_forecasts.parquet"), index=False)
 imp = pd.Series(model.feature_importance("gain"), index=FEATS).sort_values(ascending=False)
-imp.to_csv(d / "lgbm_importance.csv")
+imp.to_csv(d / f"lgbm_{a.target}_importance.csv")
 print("дууслаа;", imp.head(8).round(0).to_dict())

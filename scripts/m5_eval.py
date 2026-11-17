@@ -22,7 +22,7 @@ TRAIN_START = pd.Timestamp("2012-06-01")
 K = (1, 3, 12)
 LABEL = {"ma": "Гулсах дундаж (3 сар), суурь", "naive": "Naive", "snaive": "Улирлын naive", "ets": "ETS (улиралтай)",
          "ets_damped": "ETS (сааруулсан тренд)", "sarima": "SARIMA", "combo": "Хосолсон (ETS+ETS+SARIMA)",
-         "croston": "Croston", "sba": "SBA", "selected": "Системийн сонголт", "lgbm": "LightGBM (глобал)"}
+         "croston": "Croston", "sba": "SBA", "selected": "Системийн сонголт", "lgbm": "LightGBM (глобал, ширхгээр)", "lgbm_ratio": "LightGBM (глобал, харьцангуй)"}
 
 mon = pd.read_parquet(d / "m5_monthly.parquet").merge(pd.read_parquet(d / "m5_meta.parquet"), on="id")
 mon["qty0"] = mon.qty.fillna(0)
@@ -38,15 +38,24 @@ items = ser.loc[ser.level == "item_store", "sid"]
 act.append(mon[mon.id.isin(items)][["id", "month", "qty"]].rename(columns={"id": "sid", "qty": "y"}).assign(level="item_store"))
 act = pd.concat(act, ignore_index=True)
 
-# LightGBM: бараа түвшний таамаглалыг дээш нийлүүлнэ
-lg = pd.read_parquet(d / "lgbm_forecasts.parquet").merge(pd.read_parquet(d / "m5_meta.parquet"), on="id")
-lgs = [lg[lg.id.isin(items)].rename(columns={"id": "sid"})[["sid", "origin", "h", "target", "y_hat"]].assign(level="item_store")]
-x = lg.groupby(["store_id", "origin", "h", "target"]).y_hat.sum().reset_index().rename(columns={"store_id": "sid"})
-lgs.append(x.assign(level="store"))
-x = lg.groupby(["dept_id", "store_id", "origin", "h", "target"]).y_hat.sum().reset_index()
-x["sid"] = x.dept_id + "_" + x.store_id
-lgs.append(x[["sid", "origin", "h", "target", "y_hat"]].assign(level="dept_store"))
-fc = pd.concat([st, pd.concat(lgs).assign(model="lgbm")], ignore_index=True)
+# LightGBM: бараа түвшний таамаглалыг дээш нийлүүлнэ (bottom-up). raw ба ratio хувилбар.
+meta = pd.read_parquet(d / "m5_meta.parquet")
+
+
+def bottom_up(path, name):
+    lg = pd.read_parquet(path).merge(meta, on="id")
+    out = [lg[lg.id.isin(items)].rename(columns={"id": "sid"})[["sid", "origin", "h", "target", "y_hat"]].assign(level="item_store")]
+    x = lg.groupby(["store_id", "origin", "h", "target"]).y_hat.sum().reset_index().rename(columns={"store_id": "sid"})
+    out.append(x.assign(level="store"))
+    x = lg.groupby(["dept_id", "store_id", "origin", "h", "target"]).y_hat.sum().reset_index()
+    x["sid"] = x.dept_id + "_" + x.store_id
+    out.append(x[["sid", "origin", "h", "target", "y_hat"]].assign(level="dept_store"))
+    return pd.concat(out).assign(model=name)
+
+
+lgs = [bottom_up(d / f, n) for f, n in (("lgbm_forecasts.parquet", "lgbm"), ("lgbm_ratio_forecasts.parquet", "lgbm_ratio"))
+       if (d / f).exists()]
+fc = pd.concat([st, *lgs], ignore_index=True)
 fc = fc.merge(act.rename(columns={"month": "target"}), on=["level", "sid", "target"], how="left")
 
 # MASE масштаб: сургалтын хэсгийн (тест/validation эхлэхээс өмнөх) 12-сарын зөрүүний дундаж
@@ -80,7 +89,7 @@ val, test = per_origin(fc, VAL), per_origin(fc, TEST)
 
 # Системийн сонголт (global, WAPE, суурь = ma). LightGBM сонголтод оролцохгүй.
 sel = []
-for (lvl, k), g in val[val.model != "lgbm"].groupby(["level", "k"]):
+for (lvl, k), g in val[~val.model.str.startswith("lgbm")].groupby(["level", "k"]):
     sc = g.groupby("model").wape.mean()
     best = sc.idxmin()
     chosen = best if sc[best] < sc["ma"] else "ma"
@@ -106,7 +115,7 @@ for lvl in ("store", "dept_store", "item_store"):
     print(t.sort_values(("WAPE", 1)))
 
 # Ангиллаар (бараа түвшин, k=1): системийн сонголт ба LightGBM
-it = test[(test.level == "item_store") & (test.k == 1) & test.model.isin(["selected", "lgbm", "ma", "ets", "sba"])]
+it = test[(test.level == "item_store") & (test.k == 1) & test.model.isin(["selected", "lgbm", "lgbm_ratio", "ma", "ets", "sba"])]
 it = it.merge(mon[["id", "cat_id"]].drop_duplicates().rename(columns={"id": "sid"}), on="sid")
 bc = it.groupby(["cat_id", "model"]).apply(lambda g: g.ae.sum() / g.sy.sum(), include_groups=False).unstack().round(3)
 bc.to_csv(d / "m5_by_cat.csv")
