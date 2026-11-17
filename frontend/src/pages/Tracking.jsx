@@ -25,7 +25,7 @@ export default function Tracking({ params }) {
   const exp = done.find((e) => String(e.id) === String(eid));
   const H_LIST = horizonsFor(exp);
   const horizon = H_LIST.some(([h]) => h === Number(params.h)) ? Number(params.h) : H_LIST[H_LIST.length - 1][0];
-  const tr = useLoad(() => (eid ? api.get(`/forecasts/tracking?experiment_id=${eid}&horizon=${horizon}`) : Promise.resolve(null)), [eid, horizon]);
+  const tr = useLoad(() => (exps.data && eid ? api.get(`/forecasts/tracking?experiment_id=${eid}&horizon=${horizon}`) : Promise.resolve(null)), [!!exps.data, eid, horizon]);
   const [open, setOpen] = useState(null);
   const [q, setQ] = useState("");
   const t = tr.data;

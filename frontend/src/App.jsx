@@ -21,7 +21,7 @@ const SCREENS = [
   { path: "forecast", n: 4, title: "Барааны таамаглал", roles: ["executive", "manager"], el: Forecast },
   { path: "reports", title: "Тайлан", roles: ["executive", "manager"], el: Reports },
   { path: "tracking", title: "Гүйцэтгэл", roles: ["executive", "manager"], el: Tracking },
-  { path: "compare", title: "Аргуудын харьцуулалт", roles: ["executive", "manager"], el: Compare },
+  { path: "compare", title: "Аргуудын харьцуулалт", short: "Аргууд", roles: ["executive", "manager"], el: Compare },
   { path: "admin", title: "Хэрэглэгч ба эрх", roles: ["admin"], el: Admin },
 ];
 
@@ -74,13 +74,13 @@ export default function App() {
               {/* Менежерийн 4 алхмын дараа бусад хуудсыг зураасаар тусгаарлана */}
               {i > 0 && !x.n && visible[i - 1].n && <span className="sep" aria-hidden="true" />}
               <a href={`#/${x.path}`} className={x === screen ? "active" : ""} aria-current={x === screen ? "page" : undefined}>
-                {x.n && roles.includes("manager") ? <span className="step-n" aria-hidden="true">{x.n}</span> : null}{x.title}
+                {x.n && roles.includes("manager") ? <span className="step-n" aria-hidden="true">{x.n}</span> : null}{x.short || x.title}
               </a>
             </Fragment>
           ))}
         </nav>
         <div className="who">
-          <span className="avatar" aria-hidden="true">{initials(s.user.full_name || s.user.username)}</span>
+          <span className="avatar" title={`${s.user.full_name || s.user.username} · ${roles.map((r) => ROLE_LABELS[r]).join(", ")}`} aria-hidden="true">{initials(s.user.full_name || s.user.username)}</span>
           <span className="id">
             <b>{s.user.full_name || s.user.username}</b>
             <span>{roles.map((r) => ROLE_LABELS[r]).join(", ")}{roles.includes("manager") ? `, ${branchText(s.user.branches).toLowerCase()}` : ""}</span>

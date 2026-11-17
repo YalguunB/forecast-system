@@ -49,7 +49,7 @@ export default function Reports({ params }) {
   const exp = done.find((e) => String(e.id) === String(eid));
   const H_LIST = horizonsFor(exp);
   const horizon = H_LIST.some(([h]) => h === Number(params.h)) ? Number(params.h) : H_LIST[H_LIST.length - 1][0];
-  const rep = useLoad(() => (eid ? api.get(`/reports/dashboard?experiment_id=${eid}&horizon=${horizon}`) : Promise.resolve(null)), [eid, horizon]);
+  const rep = useLoad(() => (exps.data && eid ? api.get(`/reports/dashboard?experiment_id=${eid}&horizon=${horizon}`) : Promise.resolve(null)), [!!exps.data, eid, horizon]);
   const [cats, setCats] = useState([]);
   const [branch, setBranch] = useState("");
   const [products, setProducts] = useState([]);
