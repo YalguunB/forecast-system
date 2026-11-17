@@ -43,17 +43,19 @@ export default function Tracking({ params }) {
     <>
       <h1>Гүйцэтгэл</h1>
       <p className="muted">Таамаглал бодит {whatWith} хэр таарсныг харна.</p>
-      <div className="panel row" style={{ alignItems: "flex-end" }}>
-        <div><label htmlFor="te">Таамаглал</label>
-          <select id="te" value={eid} onChange={(e) => set({ experiment: e.target.value })}>
-            {done.map((e) => <option key={e.id} value={e.id}>{e.name} ({e.target_label.toLowerCase()})</option>)}
-          </select></div>
-        <div><label>Хугацаа <Help k="horizon" /></label>
-          <div className="tabs" role="tablist">
-            {HORIZONS.map(([h, l]) => <button key={h} role="tab" aria-selected={horizon === h} className={horizon === h ? "on" : ""} onClick={() => set({ h })}>{l}</button>)}
-          </div></div>
-        <div className="grow"><label htmlFor="tq">Бараа хайх</label>
-          <input id="tq" value={q} placeholder="нэр эсвэл код" onChange={(e) => setQ(e.target.value)} /></div>
+      <div className="slicers">
+        <div className="slicer-row">
+          <div><label htmlFor="te">Таамаглал</label>
+            <select id="te" value={eid} onChange={(e) => set({ experiment: e.target.value })}>
+              {done.map((e) => <option key={e.id} value={e.id}>{e.name} ({e.target_label.toLowerCase()})</option>)}
+            </select></div>
+          <div><label>Хугацаа <Help k="horizon" /></label>
+            <div className="seg" role="tablist">
+              {HORIZONS.map(([h, l]) => <button key={h} role="tab" aria-selected={horizon === h} className={horizon === h ? "on" : ""} onClick={() => set({ h })}>{l}</button>)}
+            </div></div>
+          <div><label htmlFor="tq">Бараа хайх</label>
+            <input id="tq" value={q} placeholder="Нэр эсвэл код" onChange={(e) => setQ(e.target.value)} /></div>
+        </div>
       </div>
       <ErrorNote error={tr.error} />
       {tr.loading && <Loading what="Харьцуулж байна" />}
