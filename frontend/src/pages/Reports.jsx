@@ -5,7 +5,7 @@ import { ErrorNote, Help, Loading, Plot, plotLayout, useLoad } from "../componen
 import { HORIZONS, PERIOD, PERIOD_LONG, accuracyLevel, MODEL_LABELS, fmt, monthLabel, pct, productLabel, PERIOD_OF } from "../labels.js";
 
 // Categorical slots (validated default palette, fixed order). Өнгө ангиллыг дагана (эрэмбийг биш).
-const SLOTS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"];
+const SLOTS = ["#146ef5", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"];
 const GRAY = "#8a949b", INK = "#3c474e";
 const CLASS = {
   smooth: "Тогтвортой", erratic: "Хэлбэлзэлтэй", intermittent: "Тасалдалтай", lumpy: "Бөөгнөрсөн", unknown: "Тодорхойгүй",

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../api.js";
 import { ErrorNote, useLoad } from "../components.jsx";
-import { AUDIT_ACTIONS, OBJECT_LABELS, PERMISSION_ROWS, ROLE_DESC, ROLE_LABELS, VERSION_STATUS, branchText } from "../labels.js";
+import { AUDIT_ACTIONS, OBJECT_LABELS, PERMISSION_ROWS, ROLE_DESC, ROLE_LABELS, VERSION_STATUS, branchText, dateTime } from "../labels.js";
 
 // UC-09: хэрэглэгч, архив, аудит
 export default function Admin() {
@@ -162,7 +162,7 @@ function Audit() {
       <table>
         <thead><tr><th>Хэзээ</th><th>Хэн</th><th>Юу хийсэн</th><th>Юуг</th><th>Дэлгэрэнгүй</th></tr></thead>
         <tbody>{(log.data || []).map((a) => (
-          <tr key={a.id}><td className="small">{new Date(a.at).toLocaleString("mn-MN")}</td><td>{a.username || "систем"}</td>
+          <tr key={a.id}><td className="small">{dateTime(a.at)}</td><td>{a.username || "систем"}</td>
             <td title={a.action}>{AUDIT_ACTIONS[a.action] || a.action}</td>
             <td>{OBJECT_LABELS[a.object_type] || a.object_type} #{a.object_id}</td>
             <td className="small">{detailText(a.detail)}

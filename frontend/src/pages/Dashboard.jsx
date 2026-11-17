@@ -1,7 +1,8 @@
 import { api } from "../api.js";
 import { go } from "../App.jsx";
+import { useState } from "react";
 import { ErrorNote, JobProgress, Loading, useLoad } from "../components.jsx";
-import { EXP_STEPS, JOB_STATUS, JOB_TYPE, ROLE_DESC, ROLE_LABELS, accuracyLevel, branchText, fmt, monthLabel, pct, seriesLabel } from "../labels.js";
+import { EXP_STEPS, JOB_STATUS, JOB_TYPE, ROLE_DESC, ROLE_LABELS, accuracyLevel, branchText, dateTime, fmt, monthLabel, pct, seriesLabel } from "../labels.js";
 import { biasText, trackGrade } from "./Tracking.jsx";
 
 export default function Dashboard({ user }) {
@@ -11,6 +12,7 @@ export default function Dashboard({ user }) {
   const versions = useLoad(() => api.get("/dataset-versions"), []);
   const exps = useLoad(() => (viewer ? api.get("/experiments") : Promise.resolve([])), []);
   const jobs = useLoad(() => api.get("/jobs?limit=8"), []);
+  const [allReady, setAllReady] = useState(false);   // hook-ууд эрт буцах нөхцлөөс өмнө байх ёстой
 
   if (user.roles.length === 1 && user.roles[0] === "admin") return <AdminHome user={user} />;
   if (versions.loading || exps.loading) return <Loading />;
@@ -23,6 +25,7 @@ export default function Dashboard({ user }) {
   const inProgress = es.find((e) => e.status !== "test_done");
   const ready = es.filter((e) => e.status === "test_done");
   const running = (jobs.data || []).filter((j) => ["queued", "running"].includes(j.status));
+  const shownReady = allReady ? ready : ready.slice(0, 5);
 
   const steps = [
     { title: "Өгөгдөл оруулах", done: hasData,
@@ -82,16 +85,18 @@ export default function Dashboard({ user }) {
           <div className="panel table-wrap">
             <table>
               <thead><tr><th>Нэр</th><th>Төрөл</th><th>Өгөгдөл</th><th></th></tr></thead>
-              <tbody>{ready.map((e) => (
+              <tbody>{shownReady.map((e) => (
                 <tr key={e.id}>
                   <td>{e.name}</td><td>{e.target_label}</td><td>{e.dataset}</td>
-                  <td className="row" style={{ gap: 8 }}>
-                    <button className="quiet" onClick={() => go("reports", { experiment: e.id })}>Тайлан</button>
-                    <button className="quiet" onClick={() => go("forecast", { experiment: e.id })}>Бараагаар</button>
+                  <td className="actions">
+                    <button className="quiet mini" onClick={() => go("reports", { experiment: e.id })}>Тайлан</button>
+                    <button className="quiet mini" onClick={() => go("forecast", { experiment: e.id })}>Бараагаар</button>
                   </td>
                 </tr>))}
               </tbody>
             </table>
+            {ready.length > 5 && <button className="quiet mini" style={{ marginTop: 12 }} onClick={() => setAllReady(!allReady)}>
+              {allReady ? "Хураах" : `Бүгдийг харах (${ready.length})`}</button>}
           </div>
         </>
       )}
@@ -107,7 +112,7 @@ export default function Dashboard({ user }) {
                   <td>{JOB_TYPE[j.type] || j.type}</td>
                   <td><span className={`badge ${j.status === "done" ? "ok" : j.status === "failed" ? "bad" : "info"}`}>{JOB_STATUS[j.status]}</span></td>
                   <td className="small">{j.error ? j.error.split("\n")[0] : j.progress?.stage || ""}</td>
-                  <td className="small">{new Date(j.created_at).toLocaleString("mn-MN")}</td>
+                  <td className="small">{dateTime(j.created_at)}</td>
                 </tr>))}
               </tbody>
             </table>
@@ -139,8 +144,8 @@ function Headline({ exp }) {
   const fm = r.forecast_months;
   return (
     <>
-      <h2>Гол дүн: {exp.name}</h2>
-      <div className="summary">
+      <h2>{exp.name}</h2>
+      <div className="summary hero">
         {oneUnit && total !== null
           ? <div className="big">{fmt(total, 0)}<small>{r.experiment.unit}, ирэх 12 сар</small></div>
           : <div className="big">{ss.length}<small>барааны таамаглал</small></div>}

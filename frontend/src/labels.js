@@ -179,3 +179,9 @@ export function plainExclude(reason) {
   if (r.startsWith("дэд багцад")) return "барааны дээд тоонд багтаагүй";
   return r;
 }
+
+// «2026-11-11 11:10» — хөтчүүд mn-MN огнооны хэлбэрийг дэмждэггүй тул AM/PM гардаг байсан
+export const dateTime = (iso) => {
+  const d = new Date(iso), z = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`;
+};
