@@ -34,8 +34,10 @@ export default function Quality({ params, user }) {
         <ImportState r={report.data} onDone={() => { report.reload(); versions.reload(); issues.reload(); }} />
       ) : report.data && (
         <>
-          {report.data.usable && fullMonths(report.data.version) < 18
-            ? <div className="status-bar warn" role="status"><b>Хугацаа богино</b><p>Энэ файлд {fullMonths(report.data.version)} сарын борлуулалт байна. Дор хаяж 18 сар хэрэгтэй.</p></div>
+          {report.data.usable && fullMonths(report.data.version) < 9
+            ? <div className="status-bar warn" role="status"><b>Хугацаа богино</b><p>Энэ файлд {fullMonths(report.data.version)} сарын борлуулалт байна. Дор хаяж 9 сар хэрэгтэй.</p></div>
+            : report.data.usable && fullMonths(report.data.version) < 18
+            ? <div className="status-bar warn" role="status"><b>✓ Урьдчилсан таамаглал гаргаж болно</b><p>Энэ файлд {fullMonths(report.data.version)} сар байна. Сар, улирлын таамаглал гарна. 18 сар хүрвэл жилийн таамаглал ч гарна.</p></div>
             : report.data.usable
             ? <div className="status-bar ok" role="status"><b>✓ Өгөгдөл бэлэн</b><p>Таамаглал гаргуулж болно.</p></div>
             : <div className="status-bar bad" role="status"><b>{report.data.blocking_open} алдаа засах хэрэгтэй</b><p>Засах хүртэл энэ файлыг ашиглахгүй.</p></div>}

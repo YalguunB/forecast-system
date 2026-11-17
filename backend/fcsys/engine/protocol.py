@@ -40,12 +40,30 @@ DEFAULT_PROTOCOL: dict = {
 
 # Хамгийн бага бүтэн сар: сургалт 12 + validation 3 + тест 3 (suggest_protocol-ийн доод хязгаар)
 MIN_FULL_MONTHS = 18
+# Урьдчилсан горим: 9–17 сар. Зөвхөн энгийн аргууд, улиралгүй; жилийн таамаглал үнэлэгдэхгүй.
+PRELIM_MIN_MONTHS = 9
+PRELIM_MODELS = [
+    {"name": "ma", "params": {"window": 3}},
+    {"name": "naive", "params": {}},
+    {"name": "ets", "params": {"seasonal": None}},
+    {"name": "croston", "params": {"alpha": 0.1}},
+    {"name": "sba", "params": {"alpha": 0.1}},
+]
+
+
+def is_preliminary(protocol: dict | None) -> bool:
+    return bool(protocol) and protocol.get("mode") == "preliminary"
 
 
 def suggest_protocol(n_months: int) -> dict:
     """Өгөгдлийн бүтэн сарын тоонд тохирох хуваалт. ≥ 48 сар: 24 / 12 / 12; 36–47: сургалт = n − 24;
     24–35: сургалт 12, үлдсэнийг validation, тестэд тэнцүү (жилийн хүрээг үнэлэх боломжгүй)."""
     p = deepcopy(DEFAULT_PROTOCOL)
+    if PRELIM_MIN_MONTHS <= n_months < MIN_FULL_MONTHS:
+        p.update(mode="preliminary", train_min_months=n_months - 6, val_months=3, test_months=3,
+                 mase_m=1, models=deepcopy(PRELIM_MODELS))
+        p["sample"]["min_length_months"] = n_months
+        return p
     if n_months >= 48:
         return p
     if n_months >= 36:
@@ -84,8 +102,12 @@ def normalize_protocol(p: dict | None) -> dict:
         errors.append("grain = month (таамаглал сарын түвшинд)")
     if out["H"] != 12 or sorted(out["horizons"]) != [1, 3, 12]:
         errors.append("H = 12, horizons = {1, 3, 12} (сар, улирал, жил) байх ёстой")
-    if out["train_min_months"] < 12 or out["val_months"] < 3 or out["test_months"] < 3:
-        errors.append("сургалт ≥ 12 сар, validation ба тест тус бүр ≥ 3 сар")
+    prelim = is_preliminary(out)
+    if out["train_min_months"] < (3 if prelim else 12) or out["val_months"] < 3 or out["test_months"] < 3:
+        errors.append(f"сургалт ≥ {3 if prelim else 12} сар, validation ба тест тус бүр ≥ 3 сар")
+    if prelim and any(m.get("name") in ("snaive", "sarima", "combo") or (m.get("params") or {}).get("seasonal")
+                      for m in out["models"]):
+        errors.append("урьдчилсан горимд улирлын аргыг ашиглахгүй (өгөгдөл 18 сар хүрэхгүй)")
     if out["step_months"] < 1:
         errors.append("step_months ≥ 1")
     if out["selection_level"] not in ("series", "group", "global"):

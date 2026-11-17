@@ -12,7 +12,7 @@ from ...db import audit, jsonb
 from ...engine.grid import TARGET_LABELS
 from ...engine.models import MODEL_REGISTRY, PLANNED_MODELS
 from ...engine.monthly import add_months, last_complete_month, months_between
-from ...engine.protocol import (DEFAULT_PROTOCOL, MIN_FULL_MONTHS, ProtocolError, canonical_hash, is_monthly, normalize_protocol,
+from ...engine.protocol import (DEFAULT_PROTOCOL, MIN_FULL_MONTHS, PRELIM_MIN_MONTHS, ProtocolError, canonical_hash, is_monthly, normalize_protocol,
                                 suggest_protocol)
 from ...engine.report import experiment_report, report_xlsx
 from ..core import ApiError, audit_rejected, branch_scope, get_conn, not_found, require, require_monthly
@@ -70,6 +70,7 @@ def defaults(dataset_version_id: int | None = None, conn=Depends(get_conn, scope
                 (dataset_version_id,)).fetchone()
             info = {"full_months": n, "first_full_month": str(first), "last_full_month": str(last_complete_month(v["date_max"]).date()),
                     "year_horizon_testable": proto["test_months"] >= 12, "min_months": MIN_FULL_MONTHS,
+                    "prelim_min_months": PRELIM_MIN_MONTHS, "preliminary": proto.get("mode") == "preliminary",
                     "n_series": dens["n_series"], "sales_month_share": dens["med"],
                     "has_inventory": conn.execute(
                         "SELECT 1 FROM curated.inventory_snapshot WHERE dataset_version_id=%s AND reliability='reliable' LIMIT 1",
@@ -87,7 +88,7 @@ def defaults(dataset_version_id: int | None = None, conn=Depends(get_conn, scope
 def list_experiments(conn=Depends(get_conn, scope="function"), user=Depends(require("forecast_view"))):
     rows = conn.execute(
         "SELECT e.id, e.name, e.target, e.status, e.dataset_version_id, e.created_at, e.locked_at, e.archived_at, "
-        "coalesce(e.protocol->>'grain', '') <> 'month' AS legacy, "
+        "coalesce(e.protocol->>'grain', '') <> 'month' AS legacy, coalesce(e.protocol->>'mode', '') = 'preliminary' AS preliminary, "
         "u.username AS created_by, d.name AS dataset, v.version_no FROM experiment.experiment e "
         "JOIN governance.app_user u ON u.id=e.created_by JOIN raw.dataset_version v ON v.id=e.dataset_version_id "
         "JOIN raw.dataset d ON d.id=v.dataset_id ORDER BY e.id DESC").fetchall()

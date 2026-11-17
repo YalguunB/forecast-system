@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api } from "../api.js";
 import { go } from "../App.jsx";
 import { ErrorNote, Help, Intro, Loading, Plot, plotLayout, useLoad } from "../components.jsx";
-import { HORIZONS, MODEL_LABELS, fmt, monthLabel, pct, seriesLabel } from "../labels.js";
+import { HORIZONS, MODEL_LABELS, fmt, monthLabel, pct, seriesLabel, horizonsFor, PRELIM_NOTE } from "../labels.js";
 
 // Гүйцэтгэл (FR-05, FR-15): таамаглал гаргаснаас хойш бодит өгөгдөл ирсэн саруудад таамаглалыг бодит утгатай харьцуулна.
 // Бодит утга бүрдээгүй сарыг харьцуулалтад оруулахгүй, алдааг тэг гэж харуулахгүй (NFR-13).
@@ -22,7 +22,9 @@ export default function Tracking({ params }) {
   const exps = useLoad(() => api.get("/experiments"), []);
   const done = (exps.data || []).filter((e) => e.status === "test_done" && !e.archived_at);
   const eid = params.experiment || done[0]?.id;
-  const horizon = Number(params.h || 12);
+  const exp = done.find((e) => String(e.id) === String(eid));
+  const H_LIST = horizonsFor(exp);
+  const horizon = H_LIST.some(([h]) => h === Number(params.h)) ? Number(params.h) : H_LIST[H_LIST.length - 1][0];
   const tr = useLoad(() => (eid ? api.get(`/forecasts/tracking?experiment_id=${eid}&horizon=${horizon}`) : Promise.resolve(null)), [eid, horizon]);
   const [open, setOpen] = useState(null);
   const [q, setQ] = useState("");
@@ -51,12 +53,13 @@ export default function Tracking({ params }) {
             </select></div>
           <div><label>Хугацаа <Help k="horizon" /></label>
             <div className="seg" role="tablist">
-              {HORIZONS.map(([h, l]) => <button key={h} role="tab" aria-selected={horizon === h} className={horizon === h ? "on" : ""} onClick={() => set({ h })}>{l}</button>)}
+              {H_LIST.map(([h, l]) => <button key={h} role="tab" aria-selected={horizon === h} className={horizon === h ? "on" : ""} onClick={() => set({ h })}>{l}</button>)}
             </div></div>
           <div><label htmlFor="tq">Бараа хайх</label>
             <input id="tq" value={q} placeholder="Нэр эсвэл код" onChange={(e) => setQ(e.target.value)} /></div>
         </div>
       </div>
+      {exp?.preliminary && <div className="notice warn small" role="status">{PRELIM_NOTE}</div>}
       <ErrorNote error={tr.error} />
       {tr.loading && <Loading what="Харьцуулж байна" />}
 

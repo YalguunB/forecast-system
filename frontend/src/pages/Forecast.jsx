@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { api } from "../api.js";
 import { go } from "../App.jsx";
 import { ErrorNote, Help, Intro, Loading, Plot, plotLayout, useLoad } from "../components.jsx";
-import { HORIZONS, PERIOD_LONG, STATES, accuracyLevel, fmt, monthLabel, seriesLabel, MODEL_LABELS, PERIOD_OF } from "../labels.js";
+import { HORIZONS, PERIOD_LONG, STATES, accuracyLevel, fmt, monthLabel, seriesLabel, MODEL_LABELS, PERIOD_OF, horizonsFor, PRELIM_NOTE } from "../labels.js";
 
 const METRIC_LABELS = { WAPE: "Сарын алдаа, %", SUM_APE: "Нийт дүнгийн алдаа, %", MAE: "Дундаж зөрүү", Bias: "Хазайлт",
   SUM_AE: "Нийт дүнгийн зөрүү", COVERAGE: "Хүрээнд багтсан", RMSE: "RMSE", MASE: "MASE", RMSSE: "RMSSE", WIDTH: "Хүрээний өргөн", PINBALL: "Pinball" };
@@ -15,7 +15,9 @@ export default function Forecast({ params, user }) {
   const eid = params.experiment || done[0]?.id;
   const series = useLoad(() => (eid ? api.get(`/forecasts/series?experiment_id=${eid}`) : Promise.resolve([])), [eid]);
   const sid = params.series || series.data?.[0]?.series_id;
-  const horizon = Number(params.h || 12);
+  const exp = done.find((e) => String(e.id) === String(eid));
+  const H_LIST = horizonsFor(exp);
+  const horizon = H_LIST.some(([h]) => h === Number(params.h)) ? Number(params.h) : H_LIST[H_LIST.length - 1][0];
   const split = params.split || "live";
   const origin = params.origin;
   const fc = useLoad(() => (eid && sid ? api.get(`/forecasts?experiment_id=${eid}&series=${sid}&horizon=${horizon}&split=${split}${origin ? `&origin_date=${origin}` : ""}${params.run ? `&run_id=${params.run}` : ""}`) : Promise.resolve(null)),
@@ -47,13 +49,14 @@ export default function Forecast({ params, user }) {
           </div></div>
         <div><label>Хугацаа <Help k="horizon" /></label>
           <div className="seg" role="tablist">
-            {HORIZONS.map(([h, l]) => <button key={h} role="tab" aria-selected={h === horizon} className={h === horizon ? "on" : ""} onClick={() => nav({ h, run: undefined, origin: undefined })}>{l}</button>)}
+            {H_LIST.map(([h, l]) => <button key={h} role="tab" aria-selected={h === horizon} className={h === horizon ? "on" : ""} onClick={() => nav({ h, run: undefined, origin: undefined })}>{l}</button>)}
           </div></div>
         <div><label>Харах</label>
           <div className="seg" role="tablist">
             {[["live", "Ирээдүй"], ["test", "Өнгөрсөнтэй харьцуулах"]].map(([v, l]) => <button key={v} role="tab" aria-selected={v === split} className={v === split ? "on" : ""} onClick={() => nav({ split: v, origin: undefined, run: undefined })}>{l}</button>)}
           </div></div>
       </div>
+      {exp?.preliminary && <div className="notice warn small" role="status">{PRELIM_NOTE}</div>}
       <ErrorNote error={fc.error} />
       {fc.loading && !f ? <Loading /> : f && (
         <>
@@ -79,7 +82,7 @@ export default function Forecast({ params, user }) {
               <MonthTable f={f} onAdjust={isManager && split === "live" ? (d) => { setAdjDate(d); document.getElementById("adjust")?.scrollIntoView({ behavior: "smooth", block: "center" }); } : null} />
             </div>
             <div>
-              <Metrics f={f} />
+              <Metrics f={f} months={exp?.preliminary ? 3 : 12} />
               {isManager && split === "live" && <Adjust f={f} date={adjDate || f.forecast[0]?.target_date} setDate={setAdjDate} onSaved={fc.reload} />}
               {isManager && split === "live" && <ValueAdded eid={eid} />}
               {f.adjusted.length > 0 && (
@@ -241,7 +244,7 @@ function MonthTable({ f, onAdjust }) {
 }
 
 // «Хэр найдвартай вэ?» — эхлээд энгийн өгүүлбэр, тоон хүснэгт нь нээгддэг хэсэгт
-function Metrics({ f }) {
+function Metrics({ f, months = 12 }) {
   if (!f.test_metrics.length) return null;
   const by = {};
   for (const m of f.test_metrics) (by[m.metric] ||= {})[m.role === "baseline" ? "base" : "sel"] = m;
@@ -261,7 +264,7 @@ function Metrics({ f }) {
   return (
     <div className="panel">
       <h3 style={{ marginTop: 0 }}>Найдвартай байдал</h3>
-      <p className="small muted">Өнгөрсөн 12 сараар шалгасан.</p>
+      <p className="small muted">Өнгөрсөн {months} сараар шалгасан.</p>
       <ul className="attn">{lines.map(([tone, tag, text]) => (
         <li key={tag}><span className={`badge ${tone}`}>{tag}</span><div className="what"><span style={{ color: "var(--ink)" }}>{text}</span></div></li>))}
       </ul>

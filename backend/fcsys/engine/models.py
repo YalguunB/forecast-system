@@ -118,7 +118,7 @@ class ETS(Forecaster):
 
     def fit(self, history, ctx):
         from statsmodels.tsa.exponential_smoothing.ets import ETSModel
-        y = _check_history(history, ctx, min_len=8).asfreq("MS")
+        y = _check_history(history, ctx, min_len=8 if self.params.get("seasonal", "add") else 4).asfreq("MS")
         trend = self.params.get("trend")            # None | 'add'
         damped = bool(self.params.get("damped", False)) and trend is not None
         seasonal = self.params.get("seasonal", "add") if len(y) >= 2 * SEASON else None
