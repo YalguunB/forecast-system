@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { api } from "../api.js";
 import { go } from "../App.jsx";
 import { ErrorNote, Help, Intro, Loading, Plot, plotLayout, useLoad } from "../components.jsx";
-import { HORIZONS, PERIOD, PERIOD_LONG, STATES, accuracyLevel, fmt, monthLabel, seriesLabel, MODEL_LABELS, PERIOD_OF } from "../labels.js";
+import { HORIZONS, PERIOD_LONG, STATES, accuracyLevel, fmt, monthLabel, seriesLabel, MODEL_LABELS, PERIOD_OF } from "../labels.js";
 
 const METRIC_LABELS = { WAPE: "Сарын алдаа, %", SUM_APE: "Нийт дүнгийн алдаа, %", MAE: "Дундаж зөрүү", Bias: "Хазайлт",
   SUM_AE: "Нийт дүнгийн зөрүү", COVERAGE: "Хүрээнд багтсан", RMSE: "RMSE", MASE: "MASE", RMSSE: "RMSSE", WIDTH: "Хүрээний өргөн", PINBALL: "Pinball" };
@@ -27,52 +27,39 @@ export default function Forecast({ params, user }) {
   const [adjDate, setAdjDate] = useState(null);
 
   if (exps.loading) return <Loading />;
-  if (!done.length) return (<><h1>Бүтээгдэхүүний таамаглал</h1><Intro><p>Бэлэн таамаглал алга.</p></Intro></>);
+  if (!done.length) return (<><h1>Барааны таамаглал</h1><Intro><p>Бэлэн таамаглал алга.</p></Intro></>);
   const f = fc.data;
   const list = (series.data || []).filter((s) => !q || seriesLabel(s).toLowerCase().includes(q.toLowerCase()) || (s.product_category || "").toLowerCase().includes(q.toLowerCase()));
   return (
     <>
-      <h1>Бүтээгдэхүүний таамаглал</h1>
-      <div className="row" style={{ marginBottom: "1rem" }}>
-        <div className="grow"><label htmlFor="e">Таамаглал</label>
+      <h1>Барааны таамаглал</h1>
+      <div className="picker" role="group" aria-label="Юуг харах">
+        <div className="f-exp"><label htmlFor="e">Таамаглал</label>
           <select id="e" value={eid} onChange={(e) => go("forecast", { experiment: e.target.value })}>
             {done.map((e) => <option key={e.id} value={e.id}>{e.name} ({e.target_label.toLowerCase()})</option>)}
           </select></div>
-        <div className="grow"><label htmlFor="s">Бүтээгдэхүүн</label>
-          <div className="row" style={{ gap: 6, flexWrap: "nowrap" }}>
-            <input aria-label="Бараа хайх" placeholder="Хайх…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 120 }} />
+        <div className="f-item"><label htmlFor="s">Бараа</label>
+          <div className="combo">
+            <input aria-label="Бараа хайх" placeholder="Хайх" value={q} onChange={(e) => setQ(e.target.value)} />
             <select id="s" value={sid || ""} onChange={(e) => nav({ series: e.target.value, origin: undefined, run: undefined })}>
               {list.map((s) => <option key={s.series_id} value={s.series_id}>{seriesLabel(s)}{s.product_category ? ` · ${s.product_category}` : ""}</option>)}
             </select>
           </div></div>
         <div><label>Хугацаа <Help k="horizon" /></label>
-          <div className="tabs" role="tablist" style={{ margin: 0 }}>
+          <div className="seg" role="tablist">
             {HORIZONS.map(([h, l]) => <button key={h} role="tab" aria-selected={h === horizon} className={h === horizon ? "on" : ""} onClick={() => nav({ h, run: undefined, origin: undefined })}>{l}</button>)}
           </div></div>
-        <div><label htmlFor="sp">Харах</label>
-          <select id="sp" value={split} onChange={(e) => nav({ split: e.target.value, origin: undefined, run: undefined })}>
-            <option value="live">Ирээдүй</option><option value="test">Өнгөрсөнтэй харьцуулах</option>
-          </select></div>
+        <div><label>Харах</label>
+          <div className="seg" role="tablist">
+            {[["live", "Ирээдүй"], ["test", "Өнгөрсөнтэй харьцуулах"]].map(([v, l]) => <button key={v} role="tab" aria-selected={v === split} className={v === split ? "on" : ""} onClick={() => nav({ split: v, origin: undefined, run: undefined })}>{l}</button>)}
+          </div></div>
       </div>
       <ErrorNote error={fc.error} />
       {fc.loading && !f ? <Loading /> : f && (
         <>
-          <div className="target-banner" aria-label="Таамаглалын тодорхойлолт">
-            <span className="fact">Бүтээгдэхүүн <b>{seriesLabel(f.series)}</b></span>
-            {f.series.product_category && <span className="fact">Ангилал <b>{f.series.product_category}</b></span>}
-            <span className="fact">Нэгж <b>{f.unit}</b></span>
-            <span className="fact">Сүүлийн бүтэн сар <Help k="origin" /> <b>{monthLabel(f.origin_date)}</b></span>
-            <span className="fact">Хугацаа <b>{PERIOD[f.horizon]} ({f.horizon} сар)</b></span>
-            <span className="fact">Арга <b>{MODEL_LABELS[f.model] || f.model}</b></span>
-            <span className="fact" style={{ flexBasis: "100%" }}>{f.target === "demand"
-              ? "Нөөц тасарсан өдрүүдийн алдагдсан борлуулалтыг нэмж тооцсон."
-              : "Зарагдах тоо. Нөөц тасарснаас алдагдсан борлуулалт ороогүй."}</span>
-          </div>
-          {split === "live" && <Summary f={f} />}
-          {split === "test" && <Intro><p>Шугамууд ойр байх тусам таамаглал зөв.
-            {f.period_total.actual !== null && <> Нийт: таамаглал <b>{fmt(f.period_total.forecast, 0)}</b>, бодит <b>{fmt(f.period_total.actual, 0)}</b> {f.unit}.</>}</p></Intro>}
+          <ProductHead f={f} live={split === "live"} />
           {split === "test" && (
-            <div className="row" style={{ marginBottom: "0.5rem" }}>
+            <div className="picker test" role="group" aria-label="Харьцуулах хугацаа">
               <div><label htmlFor="o">Эхлэх сар</label>
                 <select id="o" value={f.origin_date} onChange={(e) => nav({ origin: e.target.value })}>
                   {f.origins.map((o) => <option key={o} value={o}>{monthLabel(o, true)}</option>)}
@@ -119,37 +106,67 @@ export default function Forecast({ params, user }) {
   );
 }
 
-// Энгийн хэллэгээр товч дүгнэлт: хугацааны нийт, өмнөх оны ижил үетэй харьцуулалт, найдвартай байдал
-function Summary({ f }) {
+// Барааны толгой: нэр, үндсэн тоо (нийт, сард, өнгөрсөн оноос, найдвартай байдал), тайлбар
+function ProductHead({ f, live }) {
   const total = f.period_total.adjusted ?? f.period_total.forecast;
   const k = f.horizon;
-  // өмнөх оны ижил саруудын бодит борлуулалт (түүх 36 сар хүртэл)
+  // өмнөх оны ижил саруудын бодит утга (түүх 36 сар хүртэл)
   const byMonth = Object.fromEntries(f.history.map((h) => [h.month, h.value]));
   const ly = f.forecast.map((p) => { const [y, m] = p.target_date.split("-"); return byMonth[`${Number(y) - 1}-${m}-01`]; });
   const lyTotal = ly.every((v) => v !== undefined && v !== null) ? ly.reduce((a, v) => a + v, 0) : null;
   const change = lyTotal ? total / lyTotal - 1 : null;
   const sel = f.test_metrics.find((m) => m.metric === "WAPE" && m.role !== "baseline");
   const base = f.test_metrics.find((m) => m.metric === "WAPE" && m.role === "baseline");
-  const period = f.test_metrics.find((m) => m.metric === "SUM_APE" && m.role !== "baseline");
   const acc = accuracyLevel(sel?.value, base?.value);
-  const better = sel?.value != null && base?.value ? 1 - sel.value / base.value : null;
   const first = f.forecast[0]?.target_date, last = f.forecast[f.forecast.length - 1]?.target_date;
   const ys = f.forecast.map((p) => p.y_hat).filter((v) => v != null);
   const flat = ys.length > 1 && Math.max(...ys) - Math.min(...ys) <= 0.005 * Math.max(...ys, 1);
+  const demand = f.target === "demand";
   return (
-    <div className="summary">
-      <div className="big">{fmt(total, 0)}<small>{f.unit}, {PERIOD_LONG[k]}</small></div>
-      <div>
-        <p><b>{seriesLabel(f.series)}</b> {k === 1 ? <>{monthLabel(first, true)}-д</> : <>{monthLabel(first)} – {monthLabel(last)} хооронд</>} <b>{fmt(total, 0)} {f.unit}</b> орчим
-          {f.target === "demand" ? " эрэлттэй байна" : " зарагдана"}{k > 1 && <> (сард {fmt(total / k, 0)})</>}.
-          {change !== null && <> Өнгөрсөн оны мөн үеэс <b>{change >= 0 ? "+" : ""}{(change * 100).toFixed(0)}%</b>.</>}
-          {f.period_total.adjusted != null && <> Таны засвартай. Анхны таамаглал {fmt(f.period_total.forecast, 0)}.</>}</p>
-        {flat && <p className="small muted">Улирлын хэлбэлзэл илрээгүй тул сар бүр ижил түвшин таамагласан.</p>}
-        <p>Найдвартай байдал: <span className={`grade ${acc.tone}`}>{acc.label}</span> {acc.text}
-          {better !== null && better > 0 && <> Энгийн аргаас <b>{(better * 100).toFixed(0)}%</b> бага алдсан.</>}
-          {period?.value != null && k > 1 && <> {PERIOD_OF[k]} нийт дүнгийн алдаа <b>{(period.value * 100).toFixed(0)}%</b>.</>} <Help k="WAPE" /></p>
+    <section className="fc-head" aria-label="Барааны таамаглал">
+      <div className="fc-title">
+        <div>
+          <h2>{seriesLabel(f.series)}</h2>
+          <p className="muted">{[f.series.product_category, f.unit, `${monthLabel(f.origin_date, true)} хүртэлх өгөгдлөөр`].filter(Boolean).join(", ")}</p>
+        </div>
+        <div className="fc-tags">
+          <span className="badge info">{demand ? "Эрэлт" : "Борлуулалт"}</span>
+          <span className="badge">{MODEL_LABELS[f.model] || f.model}</span>
+        </div>
       </div>
-    </div>
+      {!live && f.period_total.actual != null && (() => {
+        const d = f.period_total.forecast / f.period_total.actual - 1;
+        return (
+          <div className="fc-stats three-up">
+            <div className="fc-stat main"><span>Таамагласан</span><b>{fmt(f.period_total.forecast, 0)}</b><small>{f.unit}</small></div>
+            <div className="fc-stat"><span>Бодит</span><b>{fmt(f.period_total.actual, 0)}</b><small>{f.unit}</small></div>
+            <div className="fc-stat"><span>Зөрүү</span><b>{d >= 0 ? "+" : "−"}{Math.abs(d * 100).toFixed(0)}%</b>
+              <small>{Math.abs(d) < 0.1 ? "ойрхон таамагласан" : d > 0 ? "илүү таамагласан" : "дутуу таамагласан"}</small></div>
+          </div>);
+      })()}
+      {live && (
+        <div className="fc-stats">
+          <div className="fc-stat main">
+            <span>{demand ? "Эрэлт" : "Борлуулалт"}, {PERIOD_LONG[k]}</span>
+            <b>{fmt(total, 0)}</b>
+            <small>{k === 1 ? monthLabel(first, true) : `${monthLabel(first)} – ${monthLabel(last)}`}</small>
+          </div>
+          {k > 1 && <div className="fc-stat"><span>Сард дунджаар</span><b>{fmt(total / k, 0)}</b><small>{f.unit}</small></div>}
+          <div className="fc-stat"><span>Өнгөрсөн оны мөн үеэс</span>
+            <b className={change == null ? "" : change >= 0 ? "up" : "down"}>{change == null ? "—" : `${change >= 0 ? "+" : "−"}${Math.abs(change * 100).toFixed(0)}%`}</b>
+            <small>{lyTotal ? `өмнө нь ${fmt(lyTotal, 0)}` : "харьцуулах өгөгдөлгүй"}</small></div>
+          <div className="fc-stat"><span>Найдвартай байдал <Help k="WAPE" /></span>
+            <b><span className={`grade ${acc.tone}`}>{acc.label}</span></b>
+            <small>{sel?.value != null ? `сарын алдаа ${(sel.value * 100).toFixed(0)}%` : acc.text}</small></div>
+        </div>
+      )}
+      <ul className="fc-notes">
+        <li>{demand ? "Нөөц тасарсан өдрүүдийн алдагдсан борлуулалтыг нэмж тооцсон." : "Зарагдах тоо. Нөөц тасарснаас алдагдсан борлуулалт ороогүй."}</li>
+        {!live && <li>Графикт шугамууд ойр байх тусам таамаглал зөв.</li>}
+        {live && flat && <li>Улирлын хэлбэлзэл илрээгүй тул сар бүр ижил түвшин таамагласан.</li>}
+        {live && f.period_total.adjusted != null && <li>Таны засвартай. Анхны таамаглал {fmt(f.period_total.forecast, 0)}.</li>}
+      </ul>
+    </section>
   );
 }
 

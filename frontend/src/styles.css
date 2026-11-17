@@ -168,6 +168,49 @@ details > summary { cursor: pointer; min-height: 32px; font-weight: 500; }
 .target-banner .fact { font-size: var(--step-0); color: color-mix(in srgb, var(--surface) 70%, transparent); }
 .target-banner .fact b { color: var(--surface); font-weight: 600; }
 
+/* ---------- Барааны таамаглал: сонголтын мөр ---------- */
+.picker {
+  display: grid; grid-template-columns: minmax(200px, 1.2fr) minmax(240px, 1.4fr) auto auto; gap: 1rem 1.25rem; align-items: end;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-m); padding: 1rem 1.25rem; margin-bottom: 1.25rem;
+}
+.picker label { font-size: 0.8rem; color: var(--ink-3); }
+.combo { display: flex; border: 1px solid var(--line-2); border-radius: var(--radius-s); background: var(--surface); }
+.combo:focus-within { border-color: var(--sky); box-shadow: 0 0 0 4px var(--sky-soft); }
+.combo input, .combo select { border: 0; box-shadow: none !important; border-radius: 0; background: transparent; min-height: 40px; }
+.picker > div { display: flex; flex-direction: column; min-width: 0; }
+.picker.test { grid-template-columns: repeat(2, minmax(200px, 320px)); }
+.fc-stats.three-up { grid-template-columns: 1.4fr 1fr 1fr; }
+.combo input { width: 34%; min-width: 84px; border-right: 1px solid var(--line); }
+.combo select { flex: 1; min-width: 0; }
+.seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-s); padding: 3px; gap: 2px; }
+.seg button { background: transparent; border: 0; color: var(--ink-2); border-radius: 7px; min-height: 34px; padding: 0.4rem 0.85rem; font-weight: 500; white-space: nowrap; }
+.seg button:hover:not(:disabled) { background: var(--surface); color: var(--ink); border-color: transparent; }
+.seg button.on { background: var(--surface); color: var(--ink); font-weight: 650; box-shadow: 0 1px 2px rgba(15, 27, 45, 0.12), 0 0 0 1px var(--line); }
+@media (max-width: 1100px) { .picker { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 640px) { .picker { grid-template-columns: minmax(0, 1fr); } .seg { display: flex; } .seg button { flex: 1; } }
+
+/* ---------- Барааны толгой ---------- */
+.fc-head { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-l); padding: 1.5rem; margin-bottom: 1rem; }
+.fc-title { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; align-items: flex-start; }
+.fc-title h2 { margin: 0; font-size: 1.75rem; letter-spacing: -0.02em; }
+.fc-title p { margin: 0.2rem 0 0; font-size: var(--step-0); }
+.fc-tags { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.fc-stats { display: grid; grid-template-columns: 1.4fr repeat(3, minmax(0, 1fr)); gap: 0.75rem; margin-top: 1.25rem; }
+.fc-stat { border-radius: var(--radius-m); background: var(--surface-2); border: 1px solid var(--line); padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
+.fc-stat > span { font-size: 0.8rem; color: var(--ink-3); font-weight: 500; }
+.fc-stat b { font-size: 1.7rem; font-weight: 700; letter-spacing: -0.025em; line-height: 1.1; }
+.fc-stat b.up { color: var(--ok); }
+.fc-stat b.down { color: var(--danger); }
+.fc-stat b .grade { font-size: 0.95rem; padding: 0.3rem 0.8rem; vertical-align: middle; }
+.fc-stat small { font-size: 0.8rem; color: var(--ink-3); }
+.fc-stat.main { background: var(--sky); border-color: var(--sky); color: #fff; }
+.fc-stat.main > span, .fc-stat.main small { color: rgba(255, 255, 255, 0.82); }
+.fc-stat.main b { font-size: 2.4rem; }
+.fc-notes { list-style: none; margin: 1rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; font-size: var(--step-0); color: var(--ink-2); }
+.fc-notes li { padding-left: 1rem; position: relative; }
+.fc-notes li::before { content: ""; position: absolute; left: 0; top: 0.6em; width: 6px; height: 6px; border-radius: 50%; background: var(--line-2); }
+@media (max-width: 900px) { .fc-stats { grid-template-columns: 1fr 1fr; } .fc-stat.main { grid-column: 1 / -1; } }
+
 /* ---------- Товч дүгнэлт ---------- */
 .summary { display: flex; flex-wrap: wrap; gap: 1rem 2rem; align-items: flex-start; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-m); padding: 1.4rem 1.5rem; margin-bottom: 1rem; }
 .summary > div:last-child { flex: 1 1 360px; }
