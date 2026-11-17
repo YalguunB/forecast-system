@@ -26,7 +26,7 @@ rows = {
     "Kaggle 1-р байр (LightGBM)": (t.loc["YJ_STU", L].to_numpy(float), "#e8590c", "-"),
     "ES_bu (жишиг)": (b.loc["ES_bu", L].to_numpy(float), "#2b8a3e", "--"),
     "sNaive (жишиг)": (b.loc["sNaive", L].to_numpy(float), "#9aa5b1", ":"),
-    "Систем": (s.loc["sys_level", [f"Level{i}" for i in range(1, 13)]].to_numpy(float), "#146ef5", "-"),
+    "Систем": (s.loc["sys_level", [f"Level{i}" for i in range(1, 13)]].to_numpy(float), "#3a6ea5", "-"),
 }
 fig, ax = plt.subplots(figsize=(10, 3.8))
 for name, (v, c, ls) in rows.items():
@@ -50,9 +50,9 @@ for ax, (c, title) in zip(axes, cases):
     d = m[m.case == c]
     lbl = [v[5:] for v in d.month]
     ax.plot(lbl, d.actual, color="#0f1b2d", marker="o", ms=3, label="Бодит борлуулалт")
-    ax.plot(lbl, d.system, color="#146ef5", lw=2, label="Системийн таамаглал")
+    ax.plot(lbl, d.system, color="#3a6ea5", lw=2, label="Системийн таамаглал")
     ax.plot(lbl, d.ma3, color="#9aa5b1", ls="--", label="3 сарын дундаж")
-    ax.plot(lbl, d.lastyear, color="#e8590c", ls=":", label="Өнгөрсөн оны мөн сар")
+    ax.plot(lbl, d.lastyear, color="#e8590c", ls=":", label="Өмнөх өгөгдлийн мөн сар")
     ax.set_title(title, fontsize=10)
     ax.set_xlabel("Сар")
     ax.grid(axis="y", alpha=0.3)

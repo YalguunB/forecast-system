@@ -20,7 +20,7 @@ LVL = {"store": "Дэлгүүр (10)", "dept_store": "Хэлтэс × дэлгү
 fig, axes = plt.subplots(1, 3, figsize=(11, 4.2), sharey=True)
 for ax, lvl in zip(axes, LVL):
     r = res[(res.level == lvl) & (res.k == 1)].set_index("model").reindex(ORDER)
-    colors = ["#146ef5" if m == "selected" else "#e8590c" if m.startswith("lgbm") else "#9aa5b1" for m in ORDER]
+    colors = ["#3a6ea5" if m == "selected" else "#e8590c" if m.startswith("lgbm") else "#9aa5b1" for m in ORDER]
     ax.barh([NAME[m] for m in ORDER], r.WAPE * 100, color=colors)
     for y, v in enumerate(r.WAPE * 100):
         ax.text(v + 0.3, y, f"{v:.1f}", va="center", fontsize=8)
@@ -39,7 +39,7 @@ act = mon.assign(q=mon.qty.fillna(0)).query("store_id == @store").groupby("month
 o = pd.Timestamp("2015-05-01")
 fig, ax = plt.subplots(figsize=(10, 3.8))
 ax.plot(act.loc["2013-01-01":].index, act.loc["2013-01-01":] / 1000, color="#0f1b2d", lw=1.6, label="Бодит борлуулалт")
-for m, c, ls in (("ets", "#146ef5", "-"), ("sarima", "#2b8a3e", "--"), ("ma", "#9aa5b1", ":")):
+for m, c, ls in (("ets", "#3a6ea5", "-"), ("sarima", "#2b8a3e", "--"), ("ma", "#9aa5b1", ":")):
     f = st[(st.level == "store") & (st.sid == store) & (st.model == m) & (st.origin == o)]
     ax.plot(f.target, f.y_hat / 1000, color=c, ls=ls, lw=1.6, label=NAME[m])
 f = lg[(lg.store_id == store) & (lg.origin == o)].groupby("target").y_hat.sum()

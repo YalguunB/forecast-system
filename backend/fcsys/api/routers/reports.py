@@ -201,7 +201,7 @@ def _group_table(series: list[dict], key: str, label: str, months: list) -> pd.D
     for r in rows.values():
         fc = r["forecast"] if r["fc_ok"] else None
         ly = r["last_year"] if r["ly_ok"] else None
-        rec = {label: r[label], "Цувааны тоо": r["n"], "Таамаглал (нийт)": fc, "Өмнөх оны ижил үе": ly,
+        rec = {label: r[label], "Цувааны тоо": r["n"], "Таамаглал (нийт)": fc, "Өмнөх өгөгдлийн ижил үе": ly,
                "Өөрчлөлт %": round((fc / ly - 1) * 100, 1) if fc is not None and ly else None,
                "Тестийн WAPE (медиан) %": round(float(np.median(r["wape"])) * 100, 1) if r["wape"] else None}
         for m, v in zip(months, r["months"]):
@@ -227,7 +227,7 @@ def summary_xlsx(experiment_id: int, horizon: int = Query(12), conn=Depends(get_
     detail = pd.DataFrame([{"Бүтээгдэхүүн": s["product_name"] or s["product_id"], "Код": s["product_id"],
                             "Ангилал": s["category"], "Салбар": s["branch_id"], "Нэгж": s["unit"],
                             "Арга": s["model"], "Таамаглал (нийт)": s["total_forecast"],
-                            "Өмнөх оны ижил үе": s["last_year"],
+                            "Өмнөх өгөгдлийн ижил үе": s["last_year"],
                             "Өөрчлөлт %": round(s["growth"] * 100, 1) if s["growth"] is not None else None,
                             **{pd.Timestamp(m).strftime("%Y-%m"): v for m, v in zip(months, s["forecast"])}}
                            for s in rep["series"]])

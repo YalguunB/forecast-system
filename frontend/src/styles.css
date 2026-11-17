@@ -1,5 +1,5 @@
 /* Таамаглалын систем — цайвар, агаартай дизайн (2026-11)
-   Нэг тод өнгө (#146EF5), гүн хар хөх бичвэр, хавтгай самбар. Сүүдэр биш хүрээгээр ялгана.
+   Нэг гол өнгө (#3A6EA5, нүдэнд зөөлөн ган цэнхэр), гүн хар хөх бичвэр, хавтгай самбар. Сүүдэр биш хүрээгээр ялгана.
    Булангийн радиус шатлалтай: самбар 16 → талбар 10 → товч бүрэн дугуй. */
 :root {
   --paper: #f4f6fa;
@@ -10,9 +10,9 @@
   --ink-3: #7a869a;
   --line: #e2e7ef;
   --line-2: #cfd7e3;
-  --sky: #146ef5;          /* гол өнгө (Lighter загварын цэнхэр) */
-  --sky-ink: #0b4fc2;
-  --sky-soft: #eaf2ff;
+  --sky: #3a6ea5;          /* гол өнгө: зөөлөн ган цэнхэр (цагаан дээр 5.3:1) */
+  --sky-ink: #2a5182;
+  --sky-soft: #ebf1f8;
   --saffron: #9a5b00;
   --saffron-soft: #fff3dc;
   --danger: #c23b30;
@@ -32,7 +32,7 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --paper: #0d1420; --surface: #141d2b; --surface-2: #182233; --ink: #edf2fa; --ink-2: #b4c0d3; --ink-3: #8794a8;
-    --line: #253246; --line-2: #33435b; --sky: #4c8ff8; --sky-ink: #8db6ff; --sky-soft: #15284a;
+    --line: #253246; --line-2: #33435b; --sky: #7fa6d3; --sky-ink: #a8c3e3; --sky-soft: #1a2a3f;
     --saffron: #f0b65a; --saffron-soft: #3a2a10; --danger: #ff8a7f; --danger-soft: #3d1a17; --ok: #5fd3a6; --ok-soft: #12352a;
     color-scheme: dark;
   }
