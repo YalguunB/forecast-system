@@ -124,7 +124,10 @@ def build_dashboard(conn, user, experiment_id: int, horizon: int, history_months
             JOIN experiment.run tr ON tr.experiment_id = ms.experiment_id AND tr.phase = 'test'
                                   AND tr.model = vr.model AND tr.params = vr.params
            WHERE ms.experiment_id = %(e)s AND ms.horizon = %(h)s),
-        base AS (SELECT run_id FROM experiment.run WHERE experiment_id = %(e)s AND phase = 'test' AND role = 'baseline')
+        -- суурь загварын тестийн ажиллуулалт: суурь нь өөр хүрээнд сонгогдсон бол role = 'selected' байж болно
+        base AS (SELECT r.run_id FROM experiment.run r JOIN experiment.experiment e ON e.id = r.experiment_id
+                  WHERE r.experiment_id = %(e)s AND r.phase = 'test' AND r.model = e.protocol->'baseline'->>'name'
+                    AND r.params = coalesce(e.protocol->'baseline'->'params', '{}'::jsonb))
         SELECT em.series_id, em.metric,
                max(em.value) FILTER (WHERE em.run_id = sel.run_id) AS selected,
                max(em.value) FILTER (WHERE em.run_id IN (SELECT run_id FROM base)) AS baseline

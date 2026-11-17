@@ -1,6 +1,8 @@
 """Таамаглал харах, харьцуулах, тайлбарлах (UC-03, UC-05; FR-F1–F4)."""
 from __future__ import annotations
 
+import json
+
 import datetime as dt
 
 import pandas as pd
@@ -124,11 +126,21 @@ def get_forecast(experiment_id: int, series: int, horizon: int = Query(12), spli
               "adjusted": period_totals(final, (horizon,)).get(horizon) if adj else None,
               "actual": (sum(act) if act and len(act) == horizon and all(v is not None for v in act) else None),
               "months": horizon, "label": PERIOD_LABELS[horizon]}
+    # Сонгосон ба суурь загварын тестийн алдаа. Суурь загвар өөр хүрээнд сонгогдсон бол түүний ажиллуулалт
+    # role = 'selected' байдаг тул суурийг протоколын тодорхойлолтоор нь олно.
     test_metrics = conn.execute(
-        "SELECT em.metric, em.value, em.n_pairs, em.undefined_reason, r.model, r.role FROM forecast.error_metric em "
-        "JOIN experiment.run r ON r.run_id=em.run_id WHERE r.experiment_id=%s AND r.phase='test' AND em.series_id=%s "
-        "AND em.horizon=%s AND em.origin_date IS NULL AND (r.model=%s OR r.role='baseline') ORDER BY r.role, em.metric",
-        (experiment_id, series, horizon, run["model"])).fetchall()
+        "WITH r AS (SELECT r.run_id, r.model, r.params, "
+        "  (r.model = e.protocol->'baseline'->>'name' AND r.params = coalesce(e.protocol->'baseline'->'params', '{}'::jsonb)) AS is_base "
+        "  FROM experiment.run r JOIN experiment.experiment e ON e.id = r.experiment_id "
+        "  WHERE r.experiment_id=%s AND r.phase='test') "
+        "SELECT em.metric, em.value, em.n_pairs, em.undefined_reason, r.model, 'selected' AS role FROM forecast.error_metric em "
+        "JOIN r ON r.run_id=em.run_id WHERE em.series_id=%s AND em.horizon=%s AND em.origin_date IS NULL "
+        "AND r.model=%s AND r.params=%s::jsonb "
+        "UNION ALL "
+        "SELECT em.metric, em.value, em.n_pairs, em.undefined_reason, r.model, 'baseline' FROM forecast.error_metric em "
+        "JOIN r ON r.run_id=em.run_id WHERE em.series_id=%s AND em.horizon=%s AND em.origin_date IS NULL AND r.is_base "
+        "ORDER BY role, metric",
+        (experiment_id, series, horizon, run["model"], json.dumps(run["params"] or {}), series, horizon)).fetchall()
     runs = conn.execute("SELECT DISTINCT r.run_id, r.model, r.params, r.role FROM experiment.run r JOIN "
                         "forecast.forecast_value fv ON fv.run_id=r.run_id WHERE r.experiment_id=%s AND r.phase=%s "
                         "AND fv.series_id=%s ORDER BY r.run_id", (experiment_id, split, series)).fetchall()
