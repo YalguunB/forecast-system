@@ -113,28 +113,36 @@ export default function Reports({ params }) {
       </div>
 
       <div className="slicers no-print">
-        <div><label htmlFor="re">Таамаглал</label>
-          <select id="re" value={eid} onChange={(e) => go("reports", { experiment: e.target.value, h: horizon })}>
-            {done.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-          </select></div>
-        <div><label>Хугацаа <Help k="horizon" /></label>
-          <div className="tabs" style={{ margin: 0 }}>
-            {HORIZONS.map(([h, l]) => <button key={h} className={h === horizon ? "on" : ""} aria-pressed={h === horizon} onClick={() => go("reports", { experiment: eid, h })}>{l}</button>)}
-          </div></div>
-        {r && [...new Set(r.series.map((s) => s.branch_id))].length > 1 && <div><label htmlFor="rb">Салбар</label>
-          <select id="rb" value={branch} onChange={(e) => setBranch(e.target.value)}>
-            <option value="">Бүгд</option>
-            {[...new Set(r.series.map((s) => s.branch_id))].map((b) => <option key={b}>{b}</option>)}
-          </select></div>}
-        <div><label htmlFor="rq">Бараа хайх</label>
-          <input id="rq" value={q} onChange={(e) => setQ(e.target.value)} placeholder="нэр эсвэл код" /></div>
-        {r && <div className="grow"><label>Ангилал <Help k="category" /></label>
-          <div className="chips">
-            {Object.keys(catColor).map((c) => (
-              <button key={c} className={`chip ${cats.includes(c) ? "on" : ""}`} aria-pressed={cats.includes(c)} onClick={() => toggle(cats, setCats, c)}>
-                <i style={{ background: catColor[c] }} />{c}</button>))}
-          </div></div>}
-        {filtered ? <button className="quiet" onClick={() => { setCats([]); setBranch(""); setProducts([]); setQ(""); }}>Шүүлтүүр цэвэрлэх</button> : null}
+        <div className="slicer-row">
+          <div className="sl-exp"><label htmlFor="re">Таамаглал</label>
+            <select id="re" value={eid} onChange={(e) => go("reports", { experiment: e.target.value, h: horizon })}>
+              {done.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select></div>
+          <div><label>Хугацаа <Help k="horizon" /></label>
+            <div className="seg">
+              {HORIZONS.map(([h, l]) => <button key={h} className={h === horizon ? "on" : ""} aria-pressed={h === horizon} onClick={() => go("reports", { experiment: eid, h })}>{l}</button>)}
+            </div></div>
+          {r && [...new Set(r.series.map((s) => s.branch_id))].length > 1 && <div><label htmlFor="rb">Салбар</label>
+            <select id="rb" value={branch} onChange={(e) => setBranch(e.target.value)}>
+              <option value="">Бүгд</option>
+              {[...new Set(r.series.map((s) => s.branch_id))].map((b) => <option key={b}>{b}</option>)}
+            </select></div>}
+          <div className="sl-q"><label htmlFor="rq">Бараа хайх</label>
+            <input id="rq" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Нэр эсвэл код" /></div>
+        </div>
+        {r && (
+          <div className="cat-row" role="group" aria-label="Ангилал">
+            <span className="cat-label">Ангилал <Help k="category" /></span>
+            <div className="cats">
+              <button className={`cat ${!cats.length ? "on" : ""}`} aria-pressed={!cats.length} onClick={() => setCats([])}>Бүгд</button>
+              {Object.keys(catColor).map((c) => (
+                <button key={c} className={`cat ${cats.includes(c) ? "on" : ""}`} aria-pressed={cats.includes(c)} onClick={() => toggle(cats, setCats, c)}
+                        style={{ "--c": catColor[c] }}>
+                  <i />{c}</button>))}
+            </div>
+            {filtered ? <button className="quiet mini" onClick={() => { setCats([]); setBranch(""); setProducts([]); setQ(""); }}>Шүүлтүүр цэвэрлэх</button> : null}
+          </div>
+        )}
       </div>
       {products.length > 0 && <p className="small">Сонгосон: <b>{products.join(", ")}</b></p>}
 

@@ -325,7 +325,24 @@ details > summary { cursor: pointer; min-height: 32px; font-weight: 500; }
 .chip:hover:not(:disabled) { background: var(--surface-2); border-color: var(--ink-3); color: var(--ink); }
 .chip i { width: 0.7rem; height: 0.7rem; border-radius: 3px; display: inline-block; }
 .chip.on { background: var(--sky-soft); color: var(--sky-ink); border-color: var(--sky); }
-.slicers { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-m); padding: 1rem 1.25rem; margin-bottom: 1rem; }
+.slicers { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-m); padding: 1rem 1.25rem; margin-bottom: 1rem; }
+.slicer-row { display: grid; grid-template-columns: minmax(220px, 1.3fr) auto auto minmax(200px, 1fr); gap: 1rem 1.25rem; align-items: start; }
+.slicer-row:not(:has(#rb)) { grid-template-columns: minmax(220px, 1.3fr) auto minmax(200px, 1fr); }
+.slicer-row > div { display: flex; flex-direction: column; min-width: 0; }
+.slicer-row label { font-size: 0.8rem; color: var(--ink-3); height: 1.25rem; display: flex; align-items: center; }
+.slicer-row .seg button { min-height: 36px; }
+/* Ангилал: нэг мөрөнд, өнгөөр тэмдэглэсэн жижиг шошгууд */
+.cat-row { display: flex; align-items: center; gap: 0.75rem 1rem; flex-wrap: wrap; margin-top: 0.9rem; padding-top: 0.9rem; border-top: 1px solid var(--line); }
+.cat-label { font-size: 0.8rem; color: var(--ink-3); white-space: nowrap; }
+.cats { display: flex; flex-wrap: wrap; gap: 0.35rem; flex: 1; min-width: 0; }
+.cat { --c: var(--ink-3); display: inline-flex; align-items: center; gap: 0.4rem; min-height: 30px; padding: 0.3rem 0.75rem; border-radius: 8px;
+  font-size: 0.82rem; font-weight: 500; background: var(--surface-2); color: var(--ink-2); border: 1px solid transparent; }
+.cat i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+.cat:hover:not(:disabled) { background: var(--surface); border-color: var(--line-2); color: var(--ink); }
+.cat.on { background: color-mix(in srgb, var(--c) 14%, var(--surface)); border-color: color-mix(in srgb, var(--c) 55%, transparent); color: var(--ink); font-weight: 600; }
+.cat.on:hover:not(:disabled) { background: color-mix(in srgb, var(--c) 20%, var(--surface)); border-color: var(--c); }
+@media (max-width: 900px) { .slicer-row, .slicer-row:not(:has(#rb)) { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .cat-row { flex-direction: column; align-items: flex-start; } .slicer-row, .slicer-row:not(:has(#rb)) { grid-template-columns: minmax(0, 1fr); } .slicer-row .seg { display: flex; } .slicer-row .seg button { flex: 1; } }
 
 /* ---------- Тайлангийн самбар ---------- */
 .dash h1 { margin-bottom: 0; }
