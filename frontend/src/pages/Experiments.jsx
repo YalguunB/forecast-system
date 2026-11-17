@@ -65,14 +65,17 @@ function List() {
           <select id="v" value={form.version} onChange={(e) => setForm({ ...form, version: e.target.value })}>
             {usable.map((v) => <option key={v.id} value={v.id}>{v.dataset} ({v.date_min} – {v.date_max})</option>)}
           </select>
-          {info && P && info.full_months >= (info.min_months || 18) && (
+          {info && P && info.full_months >= (info.prelim_min_months || info.min_months || 18) && (
             <p className="small muted" style={{ margin: "0.4rem 0 0" }}>
               {info.full_months} сарын өгөгдөл ({monthLabel(info.first_full_month)} – {monthLabel(info.last_full_month)}).
-              {!info.year_horizon_testable && " Жилийн таамаглалын алдааг хэмжих хугацаа хүрэлцэхгүй."}
+              {!info.year_horizon_testable && !info.preliminary && " Жилийн таамаглалын алдааг хэмжих хугацаа хүрэлцэхгүй."}
             </p>)}
-          {info && info.full_months < (info.min_months || 18) && (
-            <div className="notice bad small" role="alert">Энэ файлд {info.full_months} сар байна. Дор хаяж {info.min_months || 18} сар хэрэгтэй.</div>)}
-          {info && info.full_months >= (info.min_months || 18) && info.sales_month_share != null && info.sales_month_share < 0.5 && (
+          {info?.preliminary && (
+            <div className="notice warn small" role="status"><b>Урьдчилсан таамаглал.</b> Өгөгдөл {info.min_months || 18} сар хүрэхгүй тул
+              зөвхөн энгийн аргаар сар, улирлын таамаглал гарна. Найдвартай эсэхийг бүрэн шалгах боломжгүй.</div>)}
+          {info && info.full_months < (info.prelim_min_months || info.min_months || 18) && (
+            <div className="notice bad small" role="alert">Энэ файлд {info.full_months} сар байна. Дор хаяж {info.prelim_min_months || info.min_months || 18} сар хэрэгтэй.</div>)}
+          {info && info.full_months >= (info.prelim_min_months || info.min_months || 18) && info.sales_month_share != null && info.sales_month_share < 0.5 && (
             <div className="notice warn small" role="alert">Ихэнх бараа саруудын {Math.round(info.sales_month_share * 100)}%-д л зарагдсан.
               Бараагаар таамаглал найдвартай биш байж магадгүй. Ангиллаар таамаглуулбал илүү найдвартай.</div>)}
           <label htmlFor="t" style={{ marginTop: 8 }}>Юуг таамаглах <Help k="sales_vs_demand" /></label>
@@ -116,8 +119,8 @@ function List() {
             Алхам бүрийг өөрөө батлах
           </label>
           </details>
-          <p className="small muted" style={{ margin: "0.6rem 0 0" }}>Систем аргуудыг өнгөрсөн саруудад туршиж, хамгийн бага алдсаныг сонгоод ирэх 12 сарыг таамаглана. Хэдэн минут болно.</p>
-          <button style={{ marginTop: 8 }} disabled={!form.name || !usable.length || !defaults.data || (info && info.full_months < (info.min_months || 18))} onClick={create}>{form.manual ? "Үүсгэх" : "Таамаглал гаргуулах"}</button>
+          <p className="small muted" style={{ margin: "0.6rem 0 0" }}>Систем аргуудыг өнгөрсөн саруудад туршиж, хамгийн бага алдсаныг сонгоод ирэх {info?.preliminary ? "3" : "12"} сарыг таамаглана. Хэдэн минут болно.</p>
+          <button style={{ marginTop: 8 }} disabled={!form.name || !usable.length || !defaults.data || (info && info.full_months < (info.prelim_min_months || info.min_months || 18))} onClick={create}>{form.manual ? "Үүсгэх" : "Таамаглал гаргуулах"}</button>
           {!usable.length && <p className="small muted">Эхлээд өгөгдөл оруулж шалгана уу.</p>}
           <ErrorNote error={err} />
         </div>

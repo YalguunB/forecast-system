@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { api } from "../api.js";
 import { go } from "../App.jsx";
 import { ErrorNote, Help, Loading, Plot, plotLayout, useLoad } from "../components.jsx";
-import { HORIZONS, PERIOD, PERIOD_LONG, accuracyLevel, MODEL_LABELS, fmt, monthLabel, pct, productLabel, PERIOD_OF } from "../labels.js";
+import { HORIZONS, PERIOD, PERIOD_LONG, accuracyLevel, MODEL_LABELS, fmt, monthLabel, pct, productLabel, PERIOD_OF, horizonsFor, PRELIM_NOTE } from "../labels.js";
 
 // Categorical slots (validated default palette, fixed order). Өнгө ангиллыг дагана (эрэмбийг биш).
 const SLOTS = ["#146ef5", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"];
@@ -46,7 +46,9 @@ export default function Reports({ params }) {
   const exps = useLoad(() => api.get("/experiments"), []);
   const done = (exps.data || []).filter((e) => e.status === "test_done" && !e.archived_at);
   const eid = params.experiment || done[0]?.id;
-  const horizon = Number(params.h || 12);
+  const exp = done.find((e) => String(e.id) === String(eid));
+  const H_LIST = horizonsFor(exp);
+  const horizon = H_LIST.some(([h]) => h === Number(params.h)) ? Number(params.h) : H_LIST[H_LIST.length - 1][0];
   const rep = useLoad(() => (eid ? api.get(`/reports/dashboard?experiment_id=${eid}&horizon=${horizon}`) : Promise.resolve(null)), [eid, horizon]);
   const [cats, setCats] = useState([]);
   const [branch, setBranch] = useState("");
@@ -120,7 +122,7 @@ export default function Reports({ params }) {
             </select></div>
           <div><label>Хугацаа <Help k="horizon" /></label>
             <div className="seg">
-              {HORIZONS.map(([h, l]) => <button key={h} className={h === horizon ? "on" : ""} aria-pressed={h === horizon} onClick={() => go("reports", { experiment: eid, h })}>{l}</button>)}
+              {H_LIST.map(([h, l]) => <button key={h} className={h === horizon ? "on" : ""} aria-pressed={h === horizon} onClick={() => go("reports", { experiment: eid, h })}>{l}</button>)}
             </div></div>
           {r && [...new Set(r.series.map((s) => s.branch_id))].length > 1 && <div><label htmlFor="rb">Салбар</label>
             <select id="rb" value={branch} onChange={(e) => setBranch(e.target.value)}>
@@ -146,6 +148,7 @@ export default function Reports({ params }) {
       </div>
       {products.length > 0 && <p className="small">Сонгосон: <b>{products.join(", ")}</b></p>}
 
+      {exp?.preliminary && <div className="notice warn small" role="status">{PRELIM_NOTE}</div>}
       <ErrorNote error={rep.error} />
       {rep.loading && !r ? <Loading /> : r && agg && (
         <>
@@ -154,7 +157,7 @@ export default function Reports({ params }) {
             <Kpi label={`Таамаглал: ${PERIOD_LONG[horizon]}`} value={fmt(agg.total, 0)} sub={agg.change === null ? r.experiment.unit : `${chg(agg.change)} өнгөрсөн оноос`} />
             <Kpi label={<>Найдвартай байдал <Help k="WAPE" /></>} value={accuracyLevel(agg.wapeSel, agg.wapeBase).label}
                  sub={`сарын алдаа ${pct(agg.wapeSel)} (энгийн арга ${pct(agg.wapeBase)})`} />
-            {horizon > 1 && <Kpi label={<>{PERIOD_OF[horizon]} нийт дүнгийн алдаа <Help k="SUM_APE" /></>} value={pct(agg.periodErr)} sub="өнгөрсөн 12 сараар шалгасан" />}
+            {horizon > 1 && <Kpi label={<>{PERIOD_OF[horizon]} нийт дүнгийн алдаа <Help k="SUM_APE" /></>} value={pct(agg.periodErr)} sub={exp?.preliminary ? "өнгөрсөн 3 сараар шалгасан" : "өнгөрсөн 12 сараар шалгасан"} />}
             <Kpi label={<>Энгийн аргаас сайн <Help k="baseline" /></>} value={pct(agg.improved)} sub="барааны хувь" />
           </div>
 

@@ -234,3 +234,45 @@ def test_manager_without_branches(client, users, version, synthetic, database):
         with connect(database["app"]) as conn:
             conn.execute("UPDATE governance.app_user SET branches='{*}' WHERE id=%s", (uid,))
             conn.commit()
+
+
+def test_preliminary_short_history(client, users, tmp_path):
+    """12 сарын өгөгдөл: урьдчилсан горим — энгийн аргууд, улиралгүй, таамаглал гарна."""
+    import subprocess
+    import sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    subprocess.run([sys.executable, str(root / "scripts" / "gen_synthetic.py"), "--out", str(tmp_path), "--seed", "11",
+                    "--products", "6", "--branches", "1", "--start", "2025-09-01", "--end", "2026-08-31"],
+                   check=True, capture_output=True)
+    st = users["manager"]
+    ds = client.post("/api/v1/datasets", headers=_h(st), json={"name": "Богино"}).json()["id"]
+    r = _upload(client, st, ds, tmp_path, MAPPING)
+    assert r.status_code == 202, r.text
+    vid = r.json()["version_id"]
+    drain()
+    for i in client.get(f"/api/v1/dataset-versions/{vid}/issues?severity=blocking", headers=_h(st)).json()["items"]:
+        client.patch(f"/api/v1/issues/{i['id']}", headers=_h(st), json={"action": "excluded", "reason": "тоо биш"})
+    client.post(f"/api/v1/dataset-versions/{vid}/apply", headers=_h(st))
+    drain()
+
+    d = client.get(f"/api/v1/experiments/defaults?dataset_version_id={vid}", headers=_h(st)).json()
+    assert d["data"]["full_months"] == 12 and d["data"]["preliminary"]
+    p = d["protocol"]
+    assert p["mode"] == "preliminary" and (p["train_min_months"], p["val_months"], p["test_months"]) == (6, 3, 3)
+    assert not {"snaive", "sarima", "combo"} & {m["name"] for m in p["models"]}
+    bad = client.post("/api/v1/experiments", headers=_h(st), json={
+        "name": "x", "dataset_version_id": vid, "target": "demand",
+        "protocol": {**p, "models": [*p["models"], {"name": "snaive", "params": {"m": 12}}]}})
+    assert bad.status_code == 422                                           # улирлын арга хориотой
+
+    eid = client.post("/api/v1/experiments", headers=_h(st), json={
+        "name": "Урьдчилсан", "dataset_version_id": vid, "target": "demand", "protocol": p}).json()["id"]
+    assert client.post(f"/api/v1/experiments/{eid}/validate?auto=true", headers=_h(st)).status_code == 202
+    drain()
+    e = client.get(f"/api/v1/experiments/{eid}", headers=_h(st)).json()
+    assert e["status"] == "test_done", e
+    assert e["protocol"]["mode"] == "preliminary"
+    sid = client.get(f"/api/v1/forecasts/series?experiment_id={eid}", headers=_h(st)).json()[0]["series_id"]
+    fc = client.get(f"/api/v1/forecasts?experiment_id={eid}&series={sid}&horizon=3", headers=_h(st)).json()
+    assert len(fc["forecast"]) == 3 and all(f["y_hat"] is not None for f in fc["forecast"])

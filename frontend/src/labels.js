@@ -185,3 +185,7 @@ export const dateTime = (iso) => {
   const d = new Date(iso), z = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`;
 };
+
+// Урьдчилсан таамаглал (< 18 сар): жилийн хугацаа байхгүй
+export const horizonsFor = (exp) => (exp?.preliminary ? HORIZONS.filter(([h]) => h !== 12) : HORIZONS);
+export const PRELIM_NOTE = "Урьдчилсан таамаглал: өгөгдөл 18 сар хүрэхгүй тул зөвхөн энгийн аргаар сар, улирлын таамаглал гаргасан. Найдвартай эсэх нь тодорхойгүй. 18 сар хүрмэгц дахин гаргуулна уу.";
