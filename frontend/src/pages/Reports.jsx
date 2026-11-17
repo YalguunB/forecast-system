@@ -151,7 +151,7 @@ export default function Reports({ params }) {
           </div>
 
           <div className="tiles">
-            <Tile title={`Сарын борлуулалт ба ${PERIOD_OF[horizon].toLowerCase()} таамаглал`} wide
+            <Tile span={8} title={`Сарын борлуулалт ба ${PERIOD_OF[horizon].toLowerCase()} таамаглал`}
                   note="Цэнхэр: таамаглал. Тасархай шугам: өнгөрсөн оны мөн сар.">
               <Plot data={[
                 { x: r.history_months, y: agg.hist, name: r.experiment.target === "demand" ? "Өнгөрсөн эрэлт" : "Бодит борлуулалт", type: "bar", marker: { color: GRAY }, hovertemplate: "%{x|%Y.%m}: %{y:,.0f}<extra>Бодит</extra>" },
@@ -163,7 +163,17 @@ export default function Reports({ params }) {
                 style={{ width: "100%" }} useResizeHandler config={cfg} />
             </Tile>
 
-            <Tile title={`Ангиллаар: ${PERIOD_OF[horizon].toLowerCase()} таамаглал`} note="Саарал: өнгөрсөн он. Дарж шүүнэ.">
+            <Tile span={4} title="Ангиллын эзлэх хувь">
+              <Plot data={[{ type: "pie", hole: 0.6, sort: false, direction: "clockwise",
+                labels: agg.byCat.map((c) => c.key), values: agg.byCat.map((c) => c.fc ?? 0),
+                marker: { colors: agg.byCat.map((c) => catColor[c.key]), line: { color: "#fff", width: 2 } },
+                textinfo: "percent", hovertemplate: "%{label}: %{value:,.0f} (%{percent})<extra></extra>" }]}
+                layout={plotLayout({ height: 320, showlegend: true, legend: { orientation: "h", y: -0.05 }, margin: { l: 8, r: 8, t: 8, b: 8 } })}
+                onClick={(ev) => { const k = ev.points?.[0]?.label; if (k) toggle(cats, setCats, k); }}
+                style={{ width: "100%" }} useResizeHandler config={cfg} />
+            </Tile>
+
+            <Tile span={horizon > 1 || !r.season ? (horizon > 1 ? 4 : 12) : 6} title={`Ангиллаар: ${PERIOD_OF[horizon].toLowerCase()} таамаглал`} note="Саарал: өнгөрсөн он. Дарж шүүнэ.">
               <Plot data={[
                 { type: "bar", orientation: "h", name: "Өнгөрсөн он", y: [...agg.byCat].reverse().map((c) => c.key), x: [...agg.byCat].reverse().map((c) => c.ly),
                   marker: { color: GRAY }, hovertemplate: "%{y}: %{x:,.0f}<extra>Өмнөх он</extra>" },
@@ -174,18 +184,18 @@ export default function Reports({ params }) {
                 onClick={(ev) => { const k = ev.points?.[0]?.y; if (k) toggle(cats, setCats, k); }} style={{ width: "100%" }} useResizeHandler config={cfg} />
             </Tile>
 
-            <Tile title="Ангиллын эзлэх хувь">
-              <Plot data={[{ type: "pie", hole: 0.6, sort: false, direction: "clockwise",
-                labels: agg.byCat.map((c) => c.key), values: agg.byCat.map((c) => c.fc ?? 0),
-                marker: { colors: agg.byCat.map((c) => catColor[c.key]), line: { color: "#fff", width: 2 } },
-                textinfo: "percent", hovertemplate: "%{label}: %{value:,.0f} (%{percent})<extra></extra>" }]}
-                layout={plotLayout({ height: 300, showlegend: true, legend: { orientation: "h", y: -0.05 }, margin: { l: 8, r: 8, t: 8, b: 8 } })}
-                onClick={(ev) => { const k = ev.points?.[0]?.label; if (k) toggle(cats, setCats, k); }}
-                style={{ width: "100%" }} useResizeHandler config={cfg} />
-            </Tile>
+            {horizon === 1 && r.season && (
+              <Tile span={6} title="Он, сараар" note="Бараан өнгө: их борлуулалт.">
+                <Plot data={[{ type: "heatmap", z: r.season.z, x: MONTHS, y: r.season.rows.map(String),
+                  colorscale: [[0, "#cde2fb"], [0.5, "#5598e7"], [1, "#184f95"]], xgap: 2, ygap: 2,
+                  hovertemplate: "%{y} оны %{x}-р сар: %{z:,.0f}<extra></extra>", colorbar: { thickness: 10 } }]}
+                  layout={plotLayout({ height: Math.max(260, r.season.rows.length * 34 + 90), yaxis: { autorange: "reversed", type: "category" }, xaxis: { title: { text: "сар" }, type: "category" }, hovermode: "closest" })}
+                  style={{ width: "100%" }} useResizeHandler config={cfg} />
+              </Tile>
+            )}
 
             {horizon > 1 && (
-              <Tile title="Сар бүрийн таамаглал ангиллаар" wide>
+              <Tile span={8} title="Сар бүрийн таамаглал ангиллаар">
                 <Plot data={agg.byCat.map((c) => ({ type: "bar", name: c.key, x: r.forecast_months, y: c.months, marker: { color: catColor[c.key], line: { color: "#fff", width: 1 } },
                   hovertemplate: `${c.key}: %{y:,.0f}<extra></extra>` }))}
                   layout={plotLayout({ height: 320, barmode: "stack", bargap: 0.3, hovermode: "x unified", xaxis: { type: "date", tickformat: "%Y.%m", dtick: "M1", gridcolor: grid },
@@ -194,22 +204,32 @@ export default function Reports({ params }) {
               </Tile>
             )}
 
-              <Tile title="Хамгийн их таамагласан 15 бараа" wide note="Саарал: өнгөрсөн он. Дарж шүүнэ.">
+            <Tile span={7} title="Хамгийн их таамагласан 15 бараа" note="Саарал: өнгөрсөн он. Дарж шүүнэ.">
               <TopProducts rows={agg.byProduct} catColor={catColor} onPick={(p) => toggle(products, setProducts, p)} picked={products} />
             </Tile>
+            <div className="tile-stack s-5">
+              <Tile title="Хамгийн их өөрчлөгдөх бараа" note="Өнгөрсөн оны мөн үетэй харьцуулсан. Дарж шүүнэ.">
+                <Movers rows={agg.byProduct} onPick={(p) => toggle(products, setProducts, p)} />
+              </Tile>
+              <Tile title="Барааны найдвартай байдал" note="Бараа бүрийн сарын алдаагаар ангилсан.">
+                <Reliability rows={sel} />
+              </Tile>
+            </div>
 
-            {r.season && (
-              <Tile title="Он, сараар" note="Бараан өнгө: их борлуулалт.">
+
+
+            {horizon > 1 && r.season && (
+              <Tile span={6} title="Он, сараар" note="Бараан өнгө: их борлуулалт.">
                 <Plot data={[{ type: "heatmap", z: r.season.z, x: MONTHS, y: r.season.rows.map(String),
                   colorscale: [[0, "#cde2fb"], [0.5, "#5598e7"], [1, "#184f95"]], xgap: 2, ygap: 2,
                   hovertemplate: "%{y} оны %{x}-р сар: %{z:,.0f}<extra></extra>", colorbar: { thickness: 10 } }]}
-                  layout={plotLayout({ height: 300, yaxis: { autorange: "reversed", type: "category" }, xaxis: { title: { text: "сар" }, type: "category" }, hovermode: "closest" })}
+                  layout={plotLayout({ height: Math.max(260, r.season.rows.length * 34 + 90), yaxis: { autorange: "reversed", type: "category" }, xaxis: { title: { text: "сар" }, type: "category" }, hovermode: "closest" })}
                   style={{ width: "100%" }} useResizeHandler config={cfg} />
               </Tile>
             )}
 
-            <Tile title={<>Аргуудын сарын алдаа <Help k="WAPE" /></>} note="Бага нь сайн.">
-              <MethodBars validation={r.validation} />
+            <Tile span={horizon > 1 && r.season ? 6 : 12} title={<>Аргуудын сарын алдаа <Help k="WAPE" /></>} note="Бага нь сайн.">
+              <MethodBars validation={r.validation} wide={!(horizon > 1 && r.season)} />
             </Tile>
           </div>
 
@@ -273,9 +293,9 @@ function Kpi({ label, value, sub }) {
   return <div className="kpi"><span className="kpi-label">{label}</span><b>{value}</b><span className="kpi-sub">{sub}</span></div>;
 }
 
-function Tile({ title, note, wide, children }) {
+function Tile({ title, note, span, children }) {
   return (
-    <section className={`tile ${wide ? "wide" : ""}`}>
+    <section className={`tile ${span ? `s-${span}` : ""}`}>
       <h3>{title}</h3>
       {children}
       {note && <p className="small muted" style={{ margin: "0.25rem 0 0" }}>{note}</p>}
@@ -299,16 +319,58 @@ function TopProducts({ rows, catColor, onPick, picked }) {
   );
 }
 
-function MethodBars({ validation }) {
+function MethodBars({ validation, wide }) {
   const labels = (v) => (MODEL_LABELS[v.model] || v.model) + (v.model === "ets" && v.params?.trend ? " (өсөлттэй)" : "");
   const keys = [...new Set(validation.map(labels))].reverse();
   return (
     <Plot data={HORIZONS.map(([h, l], i) => ({
       type: "bar", orientation: "h", name: l, y: keys, x: keys.map((k) => validation.find((v) => labels(v) === k && v.horizon === h)?.wape),
       marker: { color: SLOTS[i] }, hovertemplate: `%{y}, ${l}: %{x:.1%}<extra></extra>`,
-    }))} layout={plotLayout({ height: Math.max(300, keys.length * 42 + 80), barmode: "group", bargap: 0.25, bargroupgap: 0.06, hovermode: "closest",
-      margin: { l: 150, r: 12, t: 8, b: 40 }, legend: { orientation: "h", y: -0.12 },
+    }))} layout={plotLayout({ height: Math.max(280, keys.length * (wide ? 30 : 40) + 70), barmode: "group", bargap: 0.25, bargroupgap: 0.06, hovermode: "closest",
+      margin: { l: 150, r: 12, t: 30, b: 30 }, legend: { orientation: "h", x: 0, y: 1.08, xanchor: "left" },
       xaxis: { tickformat: ".0%", rangemode: "tozero", gridcolor: grid }, yaxis: { automargin: true } })}
       style={{ width: "100%" }} useResizeHandler config={cfg} />
+  );
+}
+
+// Өнгөрсөн оны мөн үеэс хамгийн их өсөх 5, буурах 5 бараа (хувиар)
+function Movers({ rows, onPick }) {
+  const ok = rows.filter((g) => g.change !== null && g.ly > 0);
+  const up = [...ok].sort((a, b) => b.change - a.change).slice(0, 5).filter((g) => g.change > 0);
+  const down = [...ok].sort((a, b) => a.change - b.change).slice(0, 5).filter((g) => g.change < 0);
+  const list = [...down.reverse(), ...up.reverse()].reverse();
+  if (!list.length) return <p className="small muted">Харьцуулах өнгөрсөн оны өгөгдөл алга.</p>;
+  const css = (n, d) => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || d;
+  const okC = css("--ok", "#0f7b5a"), badC = css("--danger", "#c23b30");
+  const rev = [...list].reverse();
+  const pctTxt = (c) => `${c >= 0 ? "+" : "−"}${Math.abs(c * 100).toFixed(0)}%`;
+  return (
+    <Plot data={[{ type: "bar", orientation: "h", y: rev.map((g) => `${g.key}  ${pctTxt(g.change)}`), x: rev.map((g) => g.change),
+      marker: { color: rev.map((g) => (g.change >= 0 ? okC : badC)) }, customdata: rev.map((g) => g.key),
+      hovertemplate: "%{y}<extra></extra>" }]}
+      layout={plotLayout({ height: Math.max(220, list.length * 26 + 50), margin: { l: 120, r: 16, t: 8, b: 24 }, showlegend: false, hovermode: "closest",
+        xaxis: { tickformat: ".0%", zeroline: true, zerolinecolor: "rgba(128,140,150,0.6)", gridcolor: grid }, yaxis: { automargin: true } })}
+      onClick={(ev) => ev.points?.[0] && onPick(ev.points[0].customdata)} style={{ width: "100%" }} useResizeHandler config={cfg} />
+  );
+}
+
+// Хэдэн бараа «Сайн», «Дунд», «Сул» вэ (сарын алдаа ба энгийн аргатай харьцуулалтаар)
+function Reliability({ rows }) {
+  const order = [["Сайн", "--ok", "#0f7b5a"], ["Дунд", "--saffron", "#9a5b00"], ["Энгийн аргаас муу", "--ink-3", "#7a869a"], ["Сул", "--danger", "#c23b30"], ["Тодорхойгүй", "--line-2", "#cfd7e3"]];
+  const counts = Object.fromEntries(order.map(([l]) => [l, 0]));
+  for (const s of rows) counts[accuracyLevel(s.test?.WAPE?.selected, s.test?.WAPE?.baseline).label] += 1;
+  const shown = order.filter(([l]) => counts[l] > 0);
+  const total = rows.length || 1;
+  const css = (n, d) => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || d;
+  return (
+    <div className="rel">
+      <div className="rel-bar" role="img" aria-label={shown.map(([l]) => `${l} ${counts[l]}`).join(", ")}>
+        {shown.map(([l, v, d]) => <span key={l} style={{ flex: counts[l], background: css(v, d) }} />)}
+      </div>
+      <ul>
+        {shown.map(([l, v, d]) => (
+          <li key={l}><i style={{ background: css(v, d) }} />{l}<b>{counts[l]}</b><span>{Math.round((counts[l] / total) * 100)}%</span></li>))}
+      </ul>
+    </div>
   );
 }
