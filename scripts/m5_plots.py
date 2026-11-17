@@ -13,7 +13,7 @@ out.mkdir(parents=True, exist_ok=True)
 plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 10, "axes.spines.top": False, "axes.spines.right": False})
 res = pd.read_csv(d / "m5_results.csv")
 ORDER = ["naive", "snaive", "ma", "croston", "sba", "ets", "ets_damped", "sarima", "combo", "selected", "lgbm", "lgbm_ratio"]
-NAME = {"ma": "Гулсах дундаж", "naive": "Naive", "snaive": "Улирлын naive", "ets": "ETS", "ets_damped": "ETS (тренд)",
+NAME = {"ma": "Хөдөлгөөнт дундаж", "naive": "Naive", "snaive": "Улирлын naive", "ets": "ETS", "ets_damped": "ETS (чиг хандлага)",
         "sarima": "SARIMA", "combo": "Хосолсон", "croston": "Croston", "sba": "SBA", "selected": "Системийн сонголт",
         "lgbm": "LightGBM (ширхэг)", "lgbm_ratio": "LightGBM (харьцангуй)"}
 LVL = {"store": "Дэлгүүр (10)", "dept_store": "Хэлтэс × дэлгүүр (70)", "item_store": "Бараа × дэлгүүр (1000)"}
