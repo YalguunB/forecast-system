@@ -109,11 +109,11 @@ export default function Forecast({ params, user }) {
   );
 }
 
-// Барааны толгой: нэр, үндсэн тоо (нийт, сард, өнгөрсөн оноос, найдвартай байдал), тайлбар
+// Барааны толгой: нэр, үндсэн тоо (нийт, сард, өмнөх өгөгдлөөс, найдвартай байдал), тайлбар
 function ProductHead({ f, live }) {
   const total = f.period_total.adjusted ?? f.period_total.forecast;
   const k = f.horizon;
-  // өмнөх оны ижил саруудын бодит утга (түүх 36 сар хүртэл)
+  // өмнөх өгөгдлийн ижил саруудын бодит утга (түүх 36 сар хүртэл)
   const byMonth = Object.fromEntries(f.history.map((h) => [h.month, h.value]));
   const ly = f.forecast.map((p) => { const [y, m] = p.target_date.split("-"); return byMonth[`${Number(y) - 1}-${m}-01`]; });
   const lyTotal = ly.every((v) => v !== undefined && v !== null) ? ly.reduce((a, v) => a + v, 0) : null;
@@ -155,7 +155,7 @@ function ProductHead({ f, live }) {
             <small>{k === 1 ? monthLabel(first, true) : `${monthLabel(first)} – ${monthLabel(last)}`}</small>
           </div>
           {k > 1 && <div className="fc-stat"><span>Сард дунджаар</span><b>{fmt(total / k, 0)}</b><small>{f.unit}</small></div>}
-          <div className="fc-stat"><span>Өнгөрсөн оны мөн үеэс</span>
+          <div className="fc-stat"><span>Өмнөх өгөгдлийн мөн үеэс</span>
             <b className={change == null ? "" : change >= 0 ? "up" : "down"}>{change == null ? "—" : `${change >= 0 ? "+" : "−"}${Math.abs(change * 100).toFixed(0)}%`}</b>
             <small>{lyTotal ? `өмнө нь ${fmt(lyTotal, 0)}` : "харьцуулах өгөгдөлгүй"}</small></div>
           <div className="fc-stat"><span>Найдвартай байдал <Help k="WAPE" /></span>
@@ -176,7 +176,7 @@ function ProductHead({ f, live }) {
 function ForecastChart({ f }) {
   const traces = useMemo(() => {
     const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-    const sky = css("--sky") || "#2c6cb0", saffron = css("--saffron") || "#c2851a", ink = css("--ink-2") || "#4a5a63";
+    const sky = css("--sky") || "#3a6ea5", saffron = css("--saffron") || "#c2851a", ink = css("--ink-2") || "#4a5a63";
     const t = [];
     t.push({ x: f.history.map((h) => h.month), y: f.history.map((h) => h.value), name: "Өмнөх сарууд", type: "scatter",
       mode: "lines+markers", marker: { size: 4 }, line: { color: ink, width: 1.6 }, connectgaps: false,
@@ -189,7 +189,7 @@ function ForecastChart({ f }) {
     if (f.interval.available) {
       t.push({ x: f.forecast.map((p) => p.target_date), y: f.forecast.map((p) => p.q_hi), type: "scatter", mode: "lines", line: { width: 0 }, showlegend: false, hoverinfo: "skip" });
       t.push({ x: f.forecast.map((p) => p.target_date), y: f.forecast.map((p) => p.q_lo), type: "scatter", mode: "lines", line: { width: 0 },
-        fill: "tonexty", fillcolor: "rgba(44,108,176,0.15)", name: "80% хүрээ", hoverinfo: "skip" });
+        fill: "tonexty", fillcolor: "rgba(58,110,165,0.15)", name: "80% хүрээ", hoverinfo: "skip" });
     }
     const last = f.history[f.history.length - 1];
     const join = last && last.value !== null && f.split === "live" ? [{ target_date: last.month, y_hat: last.value }] : [];
@@ -205,11 +205,11 @@ function ForecastChart({ f }) {
         xaxis: { type: "date", tickformat: "%Y.%m", dtick: "M3", gridcolor: "rgba(128,140,150,0.15)" },
         yaxis: { gridcolor: "rgba(128,140,150,0.15)", rangemode: "tozero", title: { text: `${f.unit} / сар` } },
         shapes: [
-          { type: "rect", x0: f.origin_date, x1: f.forecast[f.forecast.length - 1]?.target_date, yref: "paper", y0: 0, y1: 1, fillcolor: "rgba(44,108,176,0.06)", line: { width: 0 }, layer: "below" },
+          { type: "rect", x0: f.origin_date, x1: f.forecast[f.forecast.length - 1]?.target_date, yref: "paper", y0: 0, y1: 1, fillcolor: "rgba(58,110,165,0.06)", line: { width: 0 }, layer: "below" },
           { type: "line", x0: f.origin_date, x1: f.origin_date, yref: "paper", y0: 0, y1: 1, line: { dash: "dot", width: 1.5, color: "#4a5a63" } }],
         annotations: [
           { x: f.origin_date, yref: "paper", y: 1.06, text: "← Бодит борлуулалт  ", showarrow: false, xanchor: "right", font: { size: 12 } },
-          { x: f.origin_date, yref: "paper", y: 1.06, text: f.split === "live" ? "  Таамаглал →" : "  Таамаглал ба бодит →", showarrow: false, xanchor: "left", font: { size: 12, color: "#2c6cb0" } }],
+          { x: f.origin_date, yref: "paper", y: 1.06, text: f.split === "live" ? "  Таамаглал →" : "  Таамаглал ба бодит →", showarrow: false, xanchor: "left", font: { size: 12, color: "#3a6ea5" } }],
         margin: { l: 56, r: 12, t: 28, b: 36 },
       })} />
   );

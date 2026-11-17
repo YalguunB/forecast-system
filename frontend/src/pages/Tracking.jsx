@@ -6,7 +6,7 @@ import { HORIZONS, MODEL_LABELS, fmt, monthLabel, pct, seriesLabel, horizonsFor,
 
 // Гүйцэтгэл (FR-05, FR-15): таамаглал гаргаснаас хойш бодит өгөгдөл ирсэн саруудад таамаглалыг бодит утгатай харьцуулна.
 // Бодит утга бүрдээгүй сарыг харьцуулалтад оруулахгүй, алдааг тэг гэж харуулахгүй (NFR-13).
-const GRAY = "#8a949b", BLUE = "#146ef5";
+const GRAY = "#8a949b", BLUE = "#3a6ea5";
 
 // Бодит гүйцэтгэлийн үнэлгээ: сарын алдаа (WAPE) ба хазайлтаас энгийн үгээр
 export function trackGrade(wape) {

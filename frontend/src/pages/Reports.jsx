@@ -5,7 +5,7 @@ import { ErrorNote, Help, Loading, Plot, plotLayout, useLoad } from "../componen
 import { HORIZONS, PERIOD, PERIOD_LONG, accuracyLevel, MODEL_LABELS, fmt, monthLabel, pct, productLabel, PERIOD_OF, horizonsFor, PRELIM_NOTE } from "../labels.js";
 
 // Categorical slots (validated default palette, fixed order). Өнгө ангиллыг дагана (эрэмбийг биш).
-const SLOTS = ["#146ef5", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"];
+const SLOTS = ["#3a6ea5", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"];
 const GRAY = "#8a949b", INK = "#3c474e";
 const CLASS = {
   smooth: "Тогтвортой", erratic: "Хэлбэлзэлтэй", intermittent: "Тасалдалтай", lumpy: "Бөөгнөрсөн", unknown: "Тодорхойгүй",
@@ -24,7 +24,7 @@ const chg = (c) => (c === null || c === undefined ? "—" : `${c >= 0 ? "▲" : 
 const cfg = { displayModeBar: false, responsive: true };
 const grid = "rgba(128,140,150,0.15)";
 
-// Бүлэглэх: түлхүүр (ангилал / бүтээгдэхүүний нэр) бүрээр таамаглал, өмнөх оны ижил үе, сар бүрийн нийлбэр
+// Бүлэглэх: түлхүүр (ангилал / бүтээгдэхүүний нэр) бүрээр таамаглал, өмнөх өгөгдлийн ижил үе, сар бүрийн нийлбэр
 function groupBy(series, keyFn, nMonths) {
   const g = {};
   for (const s of series) {
@@ -77,7 +77,7 @@ export default function Reports({ params }) {
     const n = r.forecast_months.length;
     const hist = r.history_months.map((_, i) => sum(sel.map((s) => s.history[i])));
     const fc = r.forecast_months.map((_, i) => sum(sel.map((s) => s.forecast[i])));
-    // өмнөх оны ижил сарууд: түүхийн массиваас (сүүлийн 24 сар) индексээр
+    // өмнөх өгөгдлийн ижил сарууд: түүхийн массиваас (сүүлийн 24 сар) индексээр
     const lyIdx = r.forecast_months.map((m) => r.history_months.findIndex((h) => h === `${Number(m.slice(0, 4)) - 1}${m.slice(4)}`));
     const lyMonths = lyIdx.map((i) => (i >= 0 ? hist[i] : null));
     const total = sumStrict(sel.map((s) => s.total_forecast));
@@ -154,7 +154,7 @@ export default function Reports({ params }) {
         <>
           <div className="kpis">
             <Kpi label={r.experiment.target === "demand" ? "Сүүлийн 12 сарын эрэлт" : "Сүүлийн 12 сарын борлуулалт"} value={fmt(agg.last12, 0)} sub={`${r.experiment.unit}, ${sel.length} бараа`} />
-            <Kpi label={`Таамаглал: ${PERIOD_LONG[horizon]}`} value={fmt(agg.total, 0)} sub={agg.change === null ? r.experiment.unit : `${chg(agg.change)} өнгөрсөн оноос`} />
+            <Kpi label={`Таамаглал: ${PERIOD_LONG[horizon]}`} value={fmt(agg.total, 0)} sub={agg.change === null ? r.experiment.unit : `${chg(agg.change)} өмнөх өгөгдлөөс`} />
             <Kpi label={<>Найдвартай байдал <Help k="WAPE" /></>} value={accuracyLevel(agg.wapeSel, agg.wapeBase).label}
                  sub={`сарын алдаа ${pct(agg.wapeSel)} (энгийн арга ${pct(agg.wapeBase)})`} />
             {horizon > 1 && <Kpi label={<>{PERIOD_OF[horizon]} нийт дүнгийн алдаа <Help k="SUM_APE" /></>} value={pct(agg.periodErr)} sub={exp?.preliminary ? "өнгөрсөн 3 сараар шалгасан" : "өнгөрсөн 12 сараар шалгасан"} />}
@@ -163,12 +163,12 @@ export default function Reports({ params }) {
 
           <div className="tiles">
             <Tile span={8} title={`Сарын борлуулалт ба ${PERIOD_OF[horizon].toLowerCase()} таамаглал`}
-                  note="Цэнхэр: таамаглал. Тасархай шугам: өнгөрсөн оны мөн сар.">
+                  note="Цэнхэр: таамаглал. Тасархай шугам: өмнөх өгөгдлийн мөн сар.">
               <Plot data={[
                 { x: r.history_months, y: agg.hist, name: r.experiment.target === "demand" ? "Өнгөрсөн эрэлт" : "Бодит борлуулалт", type: "bar", marker: { color: GRAY }, hovertemplate: "%{x|%Y.%m}: %{y:,.0f}<extra>Бодит</extra>" },
                 { x: r.forecast_months, y: agg.fc, name: "Таамаглал", type: "bar", marker: { color: SLOTS[0] }, hovertemplate: "%{x|%Y.%m}: %{y:,.0f}<extra>Таамаглал</extra>" },
-                { x: r.forecast_months, y: agg.lyMonths, name: "Өнгөрсөн оны мөн сар", type: "scatter", mode: "lines+markers",
-                  line: { color: INK, width: 2, dash: "dot" }, marker: { size: 8 }, hovertemplate: "%{y:,.0f}<extra>Өнгөрсөн оны мөн сар</extra>" },
+                { x: r.forecast_months, y: agg.lyMonths, name: "Өмнөх өгөгдлийн мөн сар", type: "scatter", mode: "lines+markers",
+                  line: { color: INK, width: 2, dash: "dot" }, marker: { size: 8 }, hovertemplate: "%{y:,.0f}<extra>Өмнөх өгөгдлийн мөн сар</extra>" },
               ]} layout={plotLayout({ height: 320, bargap: 0.25, hovermode: "closest", xaxis: { type: "date", tickformat: "%Y.%m", dtick: "M3", gridcolor: grid },
                 yaxis: { title: { text: `${r.experiment.unit} / сар` }, rangemode: "tozero", gridcolor: grid } })}
                 style={{ width: "100%" }} useResizeHandler config={cfg} />
@@ -184,10 +184,10 @@ export default function Reports({ params }) {
                 style={{ width: "100%" }} useResizeHandler config={cfg} />
             </Tile>
 
-            <Tile span={horizon > 1 || !r.season ? (horizon > 1 ? 4 : 12) : 6} title={`Ангиллаар: ${PERIOD_OF[horizon].toLowerCase()} таамаглал`} note="Саарал: өнгөрсөн он. Дарж шүүнэ.">
+            <Tile span={horizon > 1 || !r.season ? (horizon > 1 ? 4 : 12) : 6} title={`Ангиллаар: ${PERIOD_OF[horizon].toLowerCase()} таамаглал`} note="Саарал: өмнөх өгөгдөл. Дарж шүүнэ.">
               <Plot data={[
-                { type: "bar", orientation: "h", name: "Өнгөрсөн он", y: [...agg.byCat].reverse().map((c) => c.key), x: [...agg.byCat].reverse().map((c) => c.ly),
-                  marker: { color: GRAY }, hovertemplate: "%{y}: %{x:,.0f}<extra>Өмнөх он</extra>" },
+                { type: "bar", orientation: "h", name: "Өмнөх өгөгдөл", y: [...agg.byCat].reverse().map((c) => c.key), x: [...agg.byCat].reverse().map((c) => c.ly),
+                  marker: { color: GRAY }, hovertemplate: "%{y}: %{x:,.0f}<extra>Өмнөх өгөгдөл</extra>" },
                 { type: "bar", orientation: "h", name: "Таамаглал", y: [...agg.byCat].reverse().map((c) => c.key), x: [...agg.byCat].reverse().map((c) => c.fc),
                   marker: { color: [...agg.byCat].reverse().map((c) => catColor[c.key]) }, hovertemplate: "%{y}: %{x:,.0f}<extra>Таамаглал</extra>" },
               ]} layout={plotLayout({ height: Math.max(260, agg.byCat.length * 46 + 70), barmode: "group", bargap: 0.3, bargroupgap: 0.08, hovermode: "closest",
@@ -198,7 +198,7 @@ export default function Reports({ params }) {
             {horizon === 1 && r.season && (
               <Tile span={6} title="Он, сараар" note="Бараан өнгө: их борлуулалт.">
                 <Plot data={[{ type: "heatmap", z: r.season.z, x: MONTHS, y: r.season.rows.map(String),
-                  colorscale: [[0, "#cde2fb"], [0.5, "#5598e7"], [1, "#184f95"]], xgap: 2, ygap: 2,
+                  colorscale: [[0, "#e4ecf5"], [0.5, "#86a6cb"], [1, "#2f5687"]], xgap: 2, ygap: 2,
                   hovertemplate: "%{y} оны %{x}-р сар: %{z:,.0f}<extra></extra>", colorbar: { thickness: 10 } }]}
                   layout={plotLayout({ height: Math.max(260, r.season.rows.length * 34 + 90), yaxis: { autorange: "reversed", type: "category" }, xaxis: { title: { text: "сар" }, type: "category" }, hovermode: "closest" })}
                   style={{ width: "100%" }} useResizeHandler config={cfg} />
@@ -215,11 +215,11 @@ export default function Reports({ params }) {
               </Tile>
             )}
 
-            <Tile span={7} title="Хамгийн их таамагласан 15 бараа" note="Саарал: өнгөрсөн он. Дарж шүүнэ.">
+            <Tile span={7} title="Хамгийн их таамагласан 15 бараа" note="Саарал: өмнөх өгөгдөл. Дарж шүүнэ.">
               <TopProducts rows={agg.byProduct} catColor={catColor} onPick={(p) => toggle(products, setProducts, p)} picked={products} />
             </Tile>
             <div className="tile-stack s-5">
-              <Tile title="Хамгийн их өөрчлөгдөх бараа" note="Өнгөрсөн оны мөн үетэй харьцуулсан. Дарж шүүнэ.">
+              <Tile title="Хамгийн их өөрчлөгдөх бараа" note="Өмнөх өгөгдлийн мөн үетэй харьцуулсан. Дарж шүүнэ.">
                 <Movers rows={agg.byProduct} onPick={(p) => toggle(products, setProducts, p)} />
               </Tile>
               <Tile title="Барааны найдвартай байдал" note="Бараа бүрийн сарын алдаагаар ангилсан.">
@@ -232,7 +232,7 @@ export default function Reports({ params }) {
             {horizon > 1 && r.season && (
               <Tile span={6} title="Он, сараар" note="Бараан өнгө: их борлуулалт.">
                 <Plot data={[{ type: "heatmap", z: r.season.z, x: MONTHS, y: r.season.rows.map(String),
-                  colorscale: [[0, "#cde2fb"], [0.5, "#5598e7"], [1, "#184f95"]], xgap: 2, ygap: 2,
+                  colorscale: [[0, "#e4ecf5"], [0.5, "#86a6cb"], [1, "#2f5687"]], xgap: 2, ygap: 2,
                   hovertemplate: "%{y} оны %{x}-р сар: %{z:,.0f}<extra></extra>", colorbar: { thickness: 10 } }]}
                   layout={plotLayout({ height: Math.max(260, r.season.rows.length * 34 + 90), yaxis: { autorange: "reversed", type: "category" }, xaxis: { title: { text: "сар" }, type: "category" }, hovermode: "closest" })}
                   style={{ width: "100%" }} useResizeHandler config={cfg} />
@@ -255,7 +255,7 @@ export default function Reports({ params }) {
             <div className="panel table-wrap">
               <table>
                 <thead><tr><th>Бараа</th><th>Ангилал</th><th>Салбар</th><th>Төрөл</th><th>Арга</th>
-                  <th className="num">Таамаглал</th><th className="num">Өнгөрсөн он</th><th className="num">Өөрчлөлт</th>
+                  <th className="num">Таамаглал</th><th className="num">Өмнөх өгөгдөл</th><th className="num">Өөрчлөлт</th>
                   <th className="num">Сарын алдаа</th><th className="num">Энгийн арга</th><th></th></tr></thead>
                 <tbody>{[...sel].sort((a, b) => (b.total_forecast ?? 0) - (a.total_forecast ?? 0)).slice(0, showAll ? undefined : 20).map((s) => (
                   <tr key={s.id}><td>{productLabel(s)}</td><td>{s.category}</td><td>{s.branch_id}</td><td>{CLASS[s.class]}</td><td>{MODEL_LABELS[s.model] || s.model}</td>
@@ -280,7 +280,7 @@ function GroupTable({ rows, label, months, total, color, showCats, limit, onMore
     <div className="panel table-wrap">
       <table>
         <thead><tr><th>{label}</th>{showCats && <th>Ангилал</th>}<th className="num">Тоо</th><th className="num">Таамаглал</th><th className="num">Эзлэх хувь</th>
-          <th className="num">Өнгөрсөн он</th><th className="num">Өөрчлөлт</th><th className="num">Сарын алдаа <Help k="WAPE" /></th>
+          <th className="num">Өмнөх өгөгдөл</th><th className="num">Өөрчлөлт</th><th className="num">Сарын алдаа <Help k="WAPE" /></th>
           {monthCols && months.map((m) => <th key={m} className="num small">{monthLabel(m)}</th>)}</tr></thead>
         <tbody>{rows.slice(0, limit).map((g) => (
           <tr key={g.key}><td>{color && <i className="swatch" style={{ background: color[g.key] }} />}{g.key}</td>
@@ -319,8 +319,8 @@ function TopProducts({ rows, catColor, onPick, picked }) {
   const op = (p) => (!picked.length || picked.includes(p) ? 1 : 0.35);
   return (
     <Plot data={[
-      { type: "bar", orientation: "h", name: "Өнгөрсөн он", y: top.map((g) => g.key), x: top.map((g) => g.ly),
-        marker: { color: GRAY, opacity: top.map((g) => op(g.key)) }, hovertemplate: "%{y}: %{x:,.0f}<extra>Өмнөх он</extra>" },
+      { type: "bar", orientation: "h", name: "Өмнөх өгөгдөл", y: top.map((g) => g.key), x: top.map((g) => g.ly),
+        marker: { color: GRAY, opacity: top.map((g) => op(g.key)) }, hovertemplate: "%{y}: %{x:,.0f}<extra>Өмнөх өгөгдөл</extra>" },
       { type: "bar", orientation: "h", name: "Таамаглал", y: top.map((g) => g.key), x: top.map((g) => g.fc),
         marker: { color: top.map((g) => catColor[[...g.cats][0]] || SLOTS[0]), opacity: top.map((g) => op(g.key)) },
         customdata: top.map((g) => [...g.cats].join(", ")), hovertemplate: "%{y} (%{customdata}): %{x:,.0f}<extra>Таамаглал</extra>" },
@@ -344,13 +344,13 @@ function MethodBars({ validation, wide }) {
   );
 }
 
-// Өнгөрсөн оны мөн үеэс хамгийн их өсөх 5, буурах 5 бараа (хувиар)
+// Өмнөх өгөгдлийн мөн үеэс хамгийн их өсөх 5, буурах 5 бараа (хувиар)
 function Movers({ rows, onPick }) {
   const ok = rows.filter((g) => g.change !== null && g.ly > 0);
   const up = [...ok].sort((a, b) => b.change - a.change).slice(0, 5).filter((g) => g.change > 0);
   const down = [...ok].sort((a, b) => a.change - b.change).slice(0, 5).filter((g) => g.change < 0);
   const list = [...down.reverse(), ...up.reverse()].reverse();
-  if (!list.length) return <p className="small muted">Харьцуулах өнгөрсөн оны өгөгдөл алга.</p>;
+  if (!list.length) return <p className="small muted">Харьцуулах өмнөх өгөгдөл алга.</p>;
   const css = (n, d) => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || d;
   const okC = css("--ok", "#0f7b5a"), badC = css("--danger", "#c23b30");
   const rev = [...list].reverse();
