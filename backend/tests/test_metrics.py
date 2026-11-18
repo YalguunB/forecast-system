@@ -104,3 +104,13 @@ def test_selection_falls_back_to_baseline_when_not_better():
     metrics.loc[metrics.run_id == 11, "value"] = 0.8
     sel = select_models(metrics, prof, runs, baseline_run_id=10, level="global")
     assert set(sel["run_id"]) == {11}
+
+
+def test_report_dist_ignores_infinite_values():
+    """Тайлангийн хураангуйд inf утга орвол JSON алдаа (500) гарахаас сэргийлнэ."""
+    import numpy as np
+    import pandas as pd
+    from fcsys.engine.report import _dist
+    d = _dist(pd.Series([0.1, np.inf, None, 0.3, -np.inf]))
+    assert d["n"] == 2 and abs(d["mean"] - 0.2) < 1e-12
+    assert _dist(pd.Series([np.inf]))["n"] == 0

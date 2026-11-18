@@ -21,7 +21,7 @@ def _label(model: str, params: dict) -> str:
 
 
 def _dist(values: pd.Series) -> dict:
-    v = values.dropna()
+    v = pd.to_numeric(values, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
     if v.empty:
         return {"n": 0, "mean": None, "median": None, "p25": None, "p75": None}
     return {"n": int(len(v)), "mean": float(v.mean()), "median": float(v.median()),
@@ -69,7 +69,9 @@ def experiment_report(conn, eid: int) -> dict:
     if runs.empty:
         return rep
     runs["label"] = [_label(m, p) for m, p in zip(runs["model"], runs["params"])]
-    rep["runs"] = runs.drop(columns=["params"]).to_dict(orient="records")
+    # Ажиллаж байгаа/тасалдсан run-ий хоосон утга (runtime_ms г.м.) pandas-д NaN болдог; JSON-д null болгоно.
+    out = runs.drop(columns=["params"]).astype(object)
+    rep["runs"] = out.where(out.notna(), None).to_dict(orient="records")
 
     em = pd.DataFrame(conn.execute(
         "SELECT em.run_id, em.series_id, em.split, em.horizon, em.metric, em.value, em.undefined_reason "
