@@ -51,6 +51,11 @@ export function JobProgress({ jobId, onDone }) {
         <div className="progress"><div style={{ width: `${job.percent}%` }} /></div>
       )}
       {job.error && <div className="notice bad small">{plainError(job.error)}</div>}
+      {running && job.stalled && (
+        <div className="notice warn small" role="status">
+          Тооцоолол хүлээгдэж байна.{job.ahead > 0 ? ` Өмнө нь ${job.ahead} ажил дараалалд байгаа тул тэдгээр дуусахыг хүлээж байна.` : ""}
+          {" "}Тооцоолол хийдэг хэсэг (worker) асаалттай эсэхийг шалгана уу: <code>python -m fcsys.engine.worker</code>
+        </div>)}
     </div>
   );
 }
