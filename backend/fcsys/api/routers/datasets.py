@@ -32,8 +32,14 @@ def list_datasets(conn=Depends(get_conn, scope="function"), user=Depends(require
 
 @router.post("/datasets", status_code=201)
 def create_dataset(body: DatasetIn, conn=Depends(get_conn, scope="function"), user=Depends(require("import"))):
-    if conn.execute("SELECT 1 FROM raw.dataset WHERE name=%s", (body.name,)).fetchone():
-        raise ApiError(409, "duplicate_name", "Ийм нэртэй багц байна")
+    same = conn.execute("SELECT d.*, (SELECT count(*) FROM raw.dataset_version v WHERE v.dataset_id=d.id "
+                        "AND v.row_count IS NOT NULL) AS n_ok FROM raw.dataset d WHERE d.name=%s", (body.name,)).fetchone()
+    if same:
+        # Урьдчилж харах үед үүссэн, амжилттай файлгүй багцыг ижил нэрээр дахин ашиглана
+        if same["n_ok"] == 0 and same["created_by"] == user["id"]:
+            same.pop("n_ok")
+            return same
+        raise ApiError(409, "duplicate_name", "Ийм нэртэй багц байна. Жагсаалтаас сонгох эсвэл өөр нэр өгнө үү.")
     row = conn.execute("INSERT INTO raw.dataset (name, description, source, created_by) VALUES (%s,%s,%s,%s) "
                        "RETURNING *", (body.name, body.description, body.source, user["id"])).fetchone()
     audit(conn, user["id"], "create", "dataset", row["id"], {"name": body.name})
@@ -62,8 +68,20 @@ def preview(dataset_id: int, file: UploadFile = File(...), conn=Depends(get_conn
     finally:
         tmp.unlink(missing_ok=True)
     sm = ingest.suggest_mapping(list(df.columns))
-    return {"columns": list(df.columns), "suggested_mapping": sm,
-            "suggested_date_format": ingest.suggest_date_format(df[sm["txn_date"]]) if sm.get("txn_date") else None,
+    date_format = ingest.suggest_date_format(df[sm["txn_date"]]) if sm.get("txn_date") else None
+    # Ижил багцын өмнөх амжилттай хувилбарын зураглал энэ файлд тохирвол түүнийг санал болгоно
+    # (менежер сар бүр ижил хэлбэрийн файл оруулдаг)
+    prev = conn.execute("SELECT version_no, mapping FROM raw.dataset_version WHERE dataset_id=%s "
+                        "AND row_count IS NOT NULL ORDER BY version_no DESC LIMIT 1", (dataset_id,)).fetchone()
+    from_version = None
+    if prev and prev["mapping"]:
+        pf = {k: v for k, v in (prev["mapping"].get("fields") or {}).items() if v}
+        if pf and all(v in df.columns for v in pf.values()):
+            sm = {k: pf.get(k) for k in sm}
+            date_format = prev["mapping"].get("date_format") or date_format
+            from_version = prev["version_no"]
+    return {"columns": list(df.columns), "suggested_mapping": sm, "mapping_from_version": from_version,
+            "suggested_date_format": date_format,
             "required": ingest.REQUIRED_FIELDS, "optional": ingest.OPTIONAL_FIELDS,
             "rows": df.head(10).to_dict(orient="records")}
 
@@ -136,8 +154,8 @@ def create_version(
                            "Нэгжийн баганыг хоосон орхино уу.",
                            {"column": fields["unit"], "sample": sample.head(5).tolist()})
     sha = ingest.sha256_file(path)
-    dup = conn.execute("SELECT id, version_no FROM raw.dataset_version WHERE dataset_id=%s AND sha256=%s",
-                       (dataset_id, sha)).fetchone()
+    dup = conn.execute("SELECT id, version_no FROM raw.dataset_version WHERE dataset_id=%s AND sha256=%s "
+                       "AND NOT (status = 'failed' AND row_count IS NULL)", (dataset_id, sha)).fetchone()
     if dup and not force:   # UC-01 хувилбар 4а
         path.unlink(missing_ok=True)
         raise ApiError(409, "duplicate_checksum", f"Энэ файлыг өмнө нь оруулсан байна (хувилбар {dup['version_no']})",
@@ -147,6 +165,19 @@ def create_version(
                      ("promotion", promotion_file)):
         if up is not None and up.filename:
             aux[kind] = str(_save_upload(up, store))
+            try:   # баганыг импортын ажлаас өмнө шалгаж, дутуу бол шууд ойлгомжтой хариу өгнө
+                acols = list(ingest.read_table(aux[kind], nrows=5).columns)
+            except Exception as exc:  # noqa: BLE001
+                for f_ in [path, *map(Path, aux.values())]:
+                    f_.unlink(missing_ok=True)
+                raise ApiError(422, "unreadable_file", f"{ingest.AUX_KIND_LABELS[kind]} файлыг уншиж чадсангүй",
+                               {"error": str(exc)[:300]})
+            _, amiss = ingest.match_aux_columns(kind, acols)
+            if amiss:
+                for f_ in [path, *map(Path, aux.values())]:
+                    f_.unlink(missing_ok=True)
+                raise ApiError(422, "aux_columns_missing", ingest.aux_missing_message(kind, amiss, acols),
+                               {"kind": kind, "missing": amiss, "columns": acols})
     no = conn.execute("SELECT coalesce(max(version_no),0)+1 AS n FROM raw.dataset_version WHERE dataset_id=%s",
                       (dataset_id,)).fetchone()["n"]
     ver = conn.execute(
@@ -238,8 +269,14 @@ def quality_report(vid: int, conn=Depends(get_conn, scope="function"), user=Depe
         "WHERE type IN ('import','regrid') AND (payload->>'version_id')::bigint = %s ORDER BY id DESC LIMIT 1", (vid,)).fetchone()
     if job and job["error"]:
         job["error"] = job["error"].split("\n")[0][:400]      # traceback биш, эхний мөр л
+    # Ижил багцын өмнөх файлын үргэлжлэл (сар бүрийн шинэчлэл) эсэх: богино хугацаа нь энэ үед хэвийн
+    update_of = conn.execute(
+        "SELECT version_no, date_min, date_max FROM raw.dataset_version WHERE dataset_id=%s AND id<>%s "
+        "AND row_count IS NOT NULL AND date_max < %s ORDER BY version_no DESC LIMIT 1",
+        (v["dataset_id"], vid, v["date_min"])).fetchone() if v["date_min"] else None
     return {"version": {"id": v["id"], "status": v["status"], "row_count": v["row_count"],
                         "date_min": v["date_min"], "date_max": v["date_max"], "dataset": v["dataset"]},
+            "update_of": update_of,
             "usable": v["status"] == "validated" and blocking_open == 0,
             "blocking_open": blocking_open, "by_rule": by_rule, "by_series": by_series, "job": job}
 

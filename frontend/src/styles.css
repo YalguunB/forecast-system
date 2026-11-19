@@ -436,6 +436,17 @@ td .no { color: var(--ink-3); }
   .tile, .kpi, .panel, .summary { break-inside: avoid; }
 }
 @media (max-width: 820px) { .status-bar p { flex-basis: 100%; } }
+/* Утсан дээр цэс 4 мөр эзэлж, нэр нь тасардаг байсан → «Цэс» товчоор эвхэнэ */
+.menu-btn { display: none; }
+@media (max-width: 640px) {
+  .topbar { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .menu-btn { display: inline-flex; justify-self: start; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+              white-space: nowrap; padding: 0.4rem 0.8rem; font-size: 0.85rem; }
+  .topbar .nav { display: none; mask-image: none; }
+  .topbar.open .nav { display: flex; flex-direction: column; flex-wrap: nowrap; grid-column: 1 / -1; grid-row: 2; padding-bottom: 0.6rem; }
+  .topbar.open .nav .sep { width: auto; height: 1px; margin: 0.3rem 0.8rem; }
+  .who { grid-column: 3; grid-row: 1; }
+}
 /* Утсан дээр хүснэгтийг шахахын оронд хажуу тийш гүйлгэнэ */
 @media (max-width: 640px) {
   .table-wrap table { min-width: 560px; }

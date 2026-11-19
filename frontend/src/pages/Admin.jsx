@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../api.js";
 import { ErrorNote, useLoad } from "../components.jsx";
-import { AUDIT_ACTIONS, OBJECT_LABELS, PERMISSION_ROWS, ROLE_DESC, ROLE_LABELS, VERSION_STATUS, branchText, dateTime } from "../labels.js";
+import { AUDIT_ACTIONS, OBJECT_LABELS, PERMISSION_ROWS, ROLE_DESC, ROLE_LABELS, VERSION_STATUS, branchText, dateTime, versionStatus } from "../labels.js";
 
 // UC-09: хэрэглэгч, архив, аудит
 export default function Admin() {
@@ -118,7 +118,7 @@ function Archive() {
       <table>
         <thead><tr><th>Файл</th><th>Төлөв</th><th>Хугацаа</th><th className="num">Мөр</th><th></th></tr></thead>
         <tbody>{(versions.data || []).map((v) => (
-          <tr key={v.id}><td>{v.dataset} ({v.version_no})</td><td>{VERSION_STATUS[v.status]}</td><td>{v.date_min} – {v.date_max}</td><td className="num">{v.row_count}</td>
+          <tr key={v.id}><td>{v.dataset} ({v.version_no})</td><td>{versionStatus(v)}</td><td>{v.date_min} – {v.date_max}</td><td className="num">{v.row_count}</td>
             <td>{v.archived_at ? <span className="badge">Архивласан</span> : <button className="quiet" onClick={() => api.post(`/dataset-versions/${v.id}/archive`).then(versions.reload)}>Архивлах</button>}</td></tr>))}
         </tbody>
       </table>

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import createPlotlyComponent from "react-plotly.js/factory";
 import Plotly from "plotly.js-dist-min";
 import { api, waitJob } from "./api.js";
-import { GLOSSARY, JOB_STATUS, STATES } from "./labels.js";
+import { GLOSSARY, JOB_STATUS, STATES, plainError } from "./labels.js";
 
 export const Plot = createPlotlyComponent(Plotly);
 
@@ -50,7 +50,7 @@ export function JobProgress({ jobId, onDone }) {
       {job.percent !== null && job.percent !== undefined && (
         <div className="progress"><div style={{ width: `${job.percent}%` }} /></div>
       )}
-      {job.error && <div className="notice bad small">{job.error.split("\n")[0]}</div>}
+      {job.error && <div className="notice bad small">{plainError(job.error)}</div>}
     </div>
   );
 }

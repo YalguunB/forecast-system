@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api } from "../api.js";
 import { go } from "../App.jsx";
 import { ErrorNote, Help, Intro, JobProgress, Loading, StateLegend, useLoad } from "../components.jsx";
-import { RULE_PLAIN, RULE_SYSTEM_DID, productLabel, seriesLabel, ACTIONS, SEVERITY, SEVERITY_NOTE, STATES, VERSION_STATUS, fmt, pct } from "../labels.js";
+import { RULE_PLAIN, RULE_SYSTEM_DID, productLabel, seriesLabel, ACTIONS, SEVERITY, SEVERITY_NOTE, STATES, VERSION_STATUS, fmt, importFailed, pct, plainError, rawValue, versionStatus } from "../labels.js";
 
 // UC-02: асуудал шийдэх, төлөв батлах; FR-D10 чанарын тайлан
 export default function Quality({ params, user }) {
@@ -24,30 +24,39 @@ export default function Quality({ params, user }) {
           <label htmlFor="v">Файл</label>
           <select id="v" value={vid || ""} onChange={(e) => go("quality", { version: e.target.value })}>
             {(versions.data || []).map((v) => (
-              <option key={v.id} value={v.id}>{v.dataset} ({v.version_no}) · {VERSION_STATUS[v.status]}{v.archived_at ? " · архив" : ""}</option>
+              <option key={v.id} value={v.id}>{v.dataset} ({v.version_no}) · {versionStatus(v)}{v.archived_at ? " · архив" : ""}</option>
             ))}
           </select>
         </div>
       </div>
       <ErrorNote error={report.error} />
-      {report.loading ? <Loading /> : report.data && report.data.version.status === "imported" ? (
+      {report.loading ? <Loading /> : report.data && (report.data.version.status === "imported" || importFailed(report.data.version)) ? (
         <ImportState r={report.data} onDone={() => { report.reload(); versions.reload(); issues.reload(); }} />
-      ) : report.data && (
+      ) : report.data && (() => {
+        // Сар бүрийн шинэчлэлийн файл: «түүх богино» нь энэ файлд хэвийн тул анхааруулга биш, мэдээлэл болгоно
+        const upd = report.data.update_of;
+        const rd = upd ? { ...report.data, by_rule: report.data.by_rule.map((x) => (x.rule_id === "DQ-09" ? { ...x, severity: "info" } : x)) } : report.data;
+        return (
         <>
-          {report.data.usable && fullMonths(report.data.version) < 9
+          {upd && report.data.usable
+            ? <div className="status-bar ok" role="status"><b>✓ Шинэ сарын файл</b>
+                <p>{report.data.version.date_min} – {report.data.version.date_max}-ны борлуулалт. Өмнөх файлын ({upd.version_no}-р хувилбар, {upd.date_max} хүртэл)
+                  үргэлжлэл тул «Гүйцэтгэл» хуудсанд таамаглалтай харьцуулагдана.</p>
+                <button className="quiet" onClick={() => go("tracking")}>Гүйцэтгэл харах</button></div>
+            : report.data.usable && fullMonths(report.data.version) < 9
             ? <div className="status-bar warn" role="status"><b>Хугацаа богино</b><p>Энэ файлд {fullMonths(report.data.version)} сарын борлуулалт байна. Дор хаяж 9 сар хэрэгтэй.</p></div>
             : report.data.usable && fullMonths(report.data.version) < 18
             ? <div className="status-bar warn" role="status"><b>✓ Урьдчилсан таамаглал гаргаж болно</b><p>Энэ файлд {fullMonths(report.data.version)} сар байна. Сар, улирлын таамаглал гарна. 18 сар хүрвэл жилийн таамаглал ч гарна.</p></div>
             : report.data.usable
             ? <div className="status-bar ok" role="status"><b>✓ Өгөгдөл бэлэн</b><p>Таамаглал гаргуулж болно.</p></div>
             : <div className="status-bar bad" role="status"><b>{report.data.blocking_open} алдаа засах хэрэгтэй</b><p>Засах хүртэл энэ файлыг ашиглахгүй.</p></div>}
-          <Counts r={report.data} />
+          <Counts r={rd} />
 
           <h2>Олдсон асуудал</h2>
           <div className="panel table-wrap">
             <table>
               <thead><tr><th>Түвшин</th><th>Асуудал</th><th className="num">Тоо</th><th>Систем юу хийсэн</th><th>Шийдвэр</th></tr></thead>
-              <tbody>{[...report.data.by_rule].sort((x, y) => ["blocking", "warning", "info"].indexOf(x.severity) - ["blocking", "warning", "info"].indexOf(y.severity)).map((r, i) => (
+              <tbody>{[...rd.by_rule].sort((x, y) => ["blocking", "warning", "info"].indexOf(x.severity) - ["blocking", "warning", "info"].indexOf(y.severity)).map((r, i) => (
                 <tr key={i}>
                   <td><span className={`badge ${r.severity === "blocking" ? "bad" : r.severity === "warning" ? "warn" : "info"}`}>{SEVERITY[r.severity]}</span></td>
                   <td title={r.rule_id}>{RULE_PLAIN[r.rule_id] || r.rule_id}</td>
@@ -89,7 +98,8 @@ export default function Quality({ params, user }) {
           <SeriesTable rows={report.data.by_series} onPick={setSeries} picked={series} />
           {series && <DayCalendar vid={vid} s={series} />}
         </>
-      )}
+        );
+      })()}
     </>
   );
 }
@@ -133,7 +143,7 @@ function IssueTable({ items, total, onChange }) {
           <tr key={i.id}>
             <td className="small" title={i.rule_id}>{RULE_PLAIN[i.rule_id] || i.rule_id}</td><td>{i.product_id ? seriesLabel(i) : "—"}</td>
             <td className="small">{i.day || ""}{i.source_row ? ` · мөр ${i.source_row}` : ""}</td>
-            <td className="small clip" title={i.message}>{i.message}</td><td className="small clip" title={i.original_value || ""}>{i.original_value}</td>
+            <td className="small clip" title={i.message}>{i.message}</td><td className="small clip" title={i.original_value || ""}>{rawValue(i.original_value)}</td>
             <td>{i.action === "open"
               ? (edit === i.id ? <Decide issue={i} onDone={() => { setEdit(null); onChange(); }} />
                 : <button className="quiet" onClick={() => setEdit(i.id)}>Шийдэх</button>)
@@ -271,7 +281,7 @@ function ImportState({ r, onDone }) {
   if (j && j.status === "failed")
     return (
       <div className="status-bar bad" role="alert"><b>Шалгалт амжилтгүй боллоо</b>
-        <p>{j.error || "Тодорхойгүй алдаа."} Файлаа шалгаад дахин оруулна уу.</p>
+        <p>{plainError(j.error) || "Тодорхойгүй алдаа."} Файлаа шалгаад дахин оруулна уу.</p>
         <button className="quiet" onClick={() => go("import")}>Дахин оруулах</button>
       </div>);
   if (j && j.status === "cancelled")

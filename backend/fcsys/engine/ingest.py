@@ -20,7 +20,8 @@ DEFAULT_UNIT = "ширхэг"
 # Талбарын нэрийг таних түлхүүр үгс (англи, монгол) — зураглалын санал (UC-01 алхам 2)
 _HINTS = {
     "txn_date": ["date", "txn_date", "огноо", "day", "sale_date"],
-    "product_id": ["product_id", "productid", "item_id", "sku", "product", "item", "бүтээгдэхүүн"],
+    "product_id": ["product_id", "productid", "item_id", "sku", "product", "item", "барааныкод", "бүтээгдэхүүнийкод",
+                   "productcode", "itemcode", "code", "код", "бүтээгдэхүүн", "бараа"],
     "product_name": ["product_name", "productname", "item_name", "itemname", "бүтээгдэхүүнийнэр", "name", "нэр"],
     "product_category": ["product_category", "category", "categoryname", "category_name", "ангилал",
                          "бүтээгдэхүүнийангилал", "productgroup", "group", "бүлэг", "department", "subcategory"],
@@ -72,7 +73,8 @@ def read_table(path: str | Path, nrows: int | None = None) -> pd.DataFrame:
 
 # Эдгээр үгтэй багана нь нэгж, хэмжээ биш (UnitPrice, Unit Cost → «unit»-д буруу таарахаас сэргийлнэ)
 _NOT_FOR = {"unit": ("price", "cost", "үнэ"), "qty": ("price", "cost", "үнэ", "revenue", "amount"),
-            "product_id": ("category", "ангилал", "brand", "name", "нэр"), "txn_date": ("ship",),
+            "product_id": ("category", "ангил", "brand", "name", "нэр", "салбар", "branch", "store", "баримт",
+                           "receipt", "order", "харилцагч", "customer"), "txn_date": ("ship",),
             "product_name": ("customer", "seller", "brand", "category", "харилцагч"),
             "product_category": ("customer", "харилцагч")}
 
@@ -191,14 +193,70 @@ def parse_transactions(df: pd.DataFrame, mapping: dict, date_format: str | None 
     return out
 
 
+# Туслах файлын баганыг монгол/англи нэрээр нь таних (POS-оос гаргасан файлын толгой өөр өөр байдаг).
+# Эхлээд яг таарах, дараа нь агуулах байдлаар хайна; дарааллаар нь давуу эрхтэй.
+AUX_HINTS = {
+    "date": ["date", "огноо", "өдөр", "day"],
+    "date_from": ["date_from", "эхлэхогноо", "эхлэх", "эхэлсэн", "from", "start"],
+    "date_to": ["date_to", "дуусахогноо", "дуусах", "дууссан", "to", "end"],
+    "product_id": ["product_id", "барааныкод", "бүтээгдэхүүнийкод", "productcode", "itemcode", "sku", "код",
+                   "item", "product", "бараа"],
+    "branch_id": ["branch_id", "branch", "store", "салбар", "дэлгүүр", "shop"],
+    "on_hand": ["on_hand", "onhand", "үлдэгдэл", "stock", "нөөц", "тоо"],
+    "available": ["available", "борлуулахболомжтой", "боломжтой", "instock", "байгаа"],
+    "reliability": ["reliability", "найдвартай", "найдвар"],
+    "is_open": ["is_open", "isopen", "нээлттэй", "ажилласан", "open"],
+    "price": ["price", "үнэ"],
+    "price_kind": ["price_kind", "үнийнтөрөл", "төрөл"],
+    "known_at": ["known_at", "мэдэгдсэн", "мэдсэн"],
+    "promo_kind": ["promo_kind", "урамшууллынтөрөл"],
+}
+AUX_KIND_LABELS = {"inventory": "Нөөцийн үлдэгдлийн", "calendar": "Ажлын хуваарийн", "price": "Үнийн",
+                   "promotion": "Урамшууллын"}
+AUX_FIELD_LABELS = {"date": "Огноо", "date_from": "Эхлэх огноо", "date_to": "Дуусах огноо",
+                    "product_id": "Барааны код", "branch_id": "Салбар", "on_hand": "Үлдэгдэл",
+                    "available": "Борлуулах боломжтой (1/0)", "is_open": "Нээлттэй эсэх (1/0)", "price": "Үнэ"}
+_RELIABILITY = {"reliable": "reliable", "найдвартай": "reliable", "тийм": "reliable", "1": "reliable",
+                "true": "reliable", "yes": "reliable", "unreliable": "unreliable", "найдваргүй": "unreliable",
+                "үгүй": "unreliable", "0": "unreliable", "false": "unreliable", "no": "unreliable"}
+
+
+def _aux_required(kind: str, fields: set[str]) -> list[str]:
+    """Заавал байх талбар. Нөөцийн файлд «боломжтой» эсвэл «үлдэгдэл»-ийн аль нэг хангалттай."""
+    if kind == "inventory":
+        return ["date"] + ([] if fields & {"available", "on_hand"} else ["available"])
+    return [c for c in AUX_COLUMNS[kind] if c not in ("known_at", "reliability", "promo_kind", "on_hand",
+                                                      "product_id", "branch_id", "price_kind")]
+
+
+def match_aux_columns(kind: str, columns: list[str]) -> tuple[dict[str, str], list[str]]:
+    """Туслах файлын толгойг стандарт нэр рүү зураглана → (файлын багана → стандарт нэр, дутуу стандарт талбар)."""
+    norm = {c: re.sub(r"[^a-zа-яөүё0-9_]", "", str(c).lower()) for c in columns}
+    rename: dict[str, str] = {}
+    for field_ in AUX_COLUMNS[kind]:
+        hints = AUX_HINTS.get(field_, [field_])
+        found = next((c for h in hints for c, n in norm.items() if c not in rename and n == h), None)
+        if not found:
+            found = next((c for h in hints for c, n in norm.items() if c not in rename and h in n), None)
+        if found:
+            rename[found] = field_
+    missing = [f for f in _aux_required(kind, set(rename.values())) if f not in rename.values()]
+    return rename, missing
+
+
+def aux_missing_message(kind: str, missing: list[str], columns: list[str]) -> str:
+    need = ", ".join(f"«{AUX_FIELD_LABELS.get(m, m)}»" for m in missing)
+    return (f"{AUX_KIND_LABELS.get(kind, kind)} файлаас {need} багана олдсонгүй. "
+            f"Файлд байгаа баганууд: {', '.join(map(str, columns[:12]))}.")
+
+
 def parse_aux(kind: str, path: str | Path) -> pd.DataFrame:
-    """Туслах файл (үнэ, календарь, нөөц, урамшуулал) — тогтмол баганын нэртэй."""
+    """Туслах файл (үнэ, календарь, нөөц, урамшуулал). Баганыг монгол/англи нэрээр нь таньна."""
     df = read_table(path)
-    need = [c for c in AUX_COLUMNS[kind] if c not in ("known_at", "reliability", "promo_kind",
-                                                      "on_hand", "product_id", "branch_id")]
-    missing = [c for c in need if c not in df.columns]
+    rename, missing = match_aux_columns(kind, list(df.columns))
     if missing:
-        raise ValueError(f"{kind} файлд багана дутуу: {', '.join(missing)}")
+        raise ValueError(aux_missing_message(kind, missing, list(df.columns)))
+    df = df[list(rename)].rename(columns=rename)
     out = pd.DataFrame()
     for c in df.columns:
         if c in ("date", "known_at", "date_from", "date_to"):
@@ -217,6 +275,11 @@ def parse_aux(kind: str, path: str | Path) -> pd.DataFrame:
         out["known_at"] = out["known_at"].fillna(out["date"])
     if kind == "promotion" and "known_at" not in out:
         out["known_at"] = out["date_from"]
-    if kind == "inventory" and "reliability" not in out:
-        out["reliability"] = "unverified"
+    if kind == "inventory":
+        if "available" not in out:                     # зөвхөн үлдэгдэлтэй файл: үлдэгдэл > 0 бол зарах боломжтой
+            out["available"] = out["on_hand"].fillna(0) > 0
+        if "reliability" not in out:
+            out["reliability"] = "unverified"
+        else:
+            out["reliability"] = out["reliability"].str.lower().map(_RELIABILITY).fillna("unverified")
     return out

@@ -16,6 +16,7 @@ from fastapi.responses import StreamingResponse
 
 from ...db import audit
 from ...engine.grid import TARGET_LABELS
+from ...labels import model_label
 from ...engine.monthly import HORIZONS, PERIOD_LABELS, add_months, build_monthly, last_complete_month
 from ...engine.store import load_daily
 from ..core import ApiError, get_conn, not_found, require, require_monthly, scope_sql
@@ -62,15 +63,20 @@ def build_dashboard(conn, user, experiment_id: int, horizon: int, history_months
     fc_months = pd.date_range(add_months(last, 1), periods=horizon, freq="MS")
     ly_months = fc_months - pd.DateOffset(months=12)
 
-    # Ирээдүйн таамаглал: тухайн хүрээнд сонгогдсон загварын live run, h ≤ horizon
+    # Ирээдүйн таамаглал: тухайн хүрээнд сонгогдсон загварын live run, h ≤ horizon.
+    # Менежерийн гараар хийсэн засвар (хамгийн сүүлийнх) байвал түүнийг ашиглана; системийн утга y_sys-д.
     fc = pd.DataFrame(conn.execute(
-        "SELECT fv.series_id, fv.target_date, fv.y_hat, r.model, r.params FROM forecast.forecast_value fv "
+        "SELECT fv.series_id, fv.target_date, "
+        "coalesce((SELECT a.adjusted_value FROM governance.forecast_adjustment a WHERE a.run_id=fv.run_id "
+        "  AND a.series_id=fv.series_id AND a.target_date=fv.target_date ORDER BY a.created_at DESC LIMIT 1), "
+        "  fv.y_hat) AS y_hat, fv.y_hat AS y_sys, r.model, r.params FROM forecast.forecast_value fv "
         "JOIN experiment.run r ON r.run_id=fv.run_id "
         "JOIN experiment.model_selection ms ON ms.experiment_id=r.experiment_id AND ms.series_id=fv.series_id "
         "  AND ms.horizon=%s "
         "JOIN experiment.run vr ON vr.run_id=ms.run_id AND vr.model=r.model AND vr.params=r.params "
         "WHERE r.experiment_id=%s AND fv.split='live' AND fv.h <= %s",
-        (horizon, experiment_id, horizon)).fetchall(), columns=["series_id", "target_date", "y_hat", "model", "params"])
+        (horizon, experiment_id, horizon)).fetchall(),
+        columns=["series_id", "target_date", "y_hat", "y_sys", "model", "params"])
     if not fc.empty:
         fc["target_date"] = pd.to_datetime(fc["target_date"])
 
@@ -88,14 +94,18 @@ def build_dashboard(conn, user, experiment_id: int, horizon: int, history_months
             states[k] = states.get(k, 0) + int(v)
         f = fc[fc.series_id == s["id"]]
         fser = f.set_index("target_date")["y_hat"].reindex(fc_months) if len(f) else pd.Series(np.nan, index=fc_months)
+        fsys = f.set_index("target_date")["y_sys"].reindex(fc_months) if len(f) else pd.Series(np.nan, index=fc_months)
+        n_adj = int((fser.astype(float) - fsys.astype(float)).abs().gt(1e-9).sum())
         h = y.reindex(hist_months)
         ly = [_f(v) for v in y.reindex(ly_months).values]
         fvals = [_f(v) for v in fser.values]
         total = _sum_or_none(fvals)
         last_year = _sum_or_none(ly)
         per_series.append({**s, "model": f["model"].iloc[0] if len(f) else None,
+                           "model_label": model_label(f["model"].iloc[0], f["params"].iloc[0]) if len(f) else None,
                            "history": [_f(v) for v in h.values], "forecast": fvals,
                            "total_forecast": _f(total), "last_year": _f(last_year),
+                           "total_system": _f(_sum_or_none([_f(v) for v in fsys.values])), "n_adjusted": n_adj,
                            "growth": _f(total / last_year - 1) if total is not None and last_year else None})
 
     # Улирлын хэв шинж: он × сар, сарын нийт борлуулалт
@@ -149,7 +159,11 @@ def build_dashboard(conn, user, experiment_id: int, horizon: int, history_months
     kpi = {"wape_selected": med("WAPE", "selected"), "wape_baseline": med("WAPE", "baseline"),
            "period_error_selected": med("SUM_APE", "selected"), "period_error_baseline": med("SUM_APE", "baseline"),
            "share_improved": _f((wape.selected < wape.baseline).mean()) if len(wape) else None,
-           "coverage": med("COVERAGE", "selected"), "n_series": len(per_series)}
+           "coverage": med("COVERAGE", "selected"), "n_series": len(per_series),
+           # гараар засварласан сарын тоо ба системийн анхны нийт дүн (засвартай дүнтэй харьцуулахад)
+           "n_adjusted": sum(s["n_adjusted"] for s in per_series),
+           "total_system": _f(sum(s["total_system"] or 0 for s in per_series)),
+           "total_final": _f(sum(s["total_forecast"] or 0 for s in per_series))}
     per_test = {}
     for r in tdf.itertuples():
         per_test.setdefault(int(r.series_id), {})[r.metric] = {"selected": _f(r.selected), "baseline": _f(r.baseline)}
@@ -201,11 +215,13 @@ def _group_table(series: list[dict], key: str, label: str, months: list) -> pd.D
     for r in rows.values():
         fc = r["forecast"] if r["fc_ok"] else None
         ly = r["last_year"] if r["ly_ok"] else None
-        rec = {label: r[label], "Цувааны тоо": r["n"], "Таамаглал (нийт)": fc, "Өмнөх өгөгдлийн ижил үе": ly,
+        rec = {label: r[label], "Бараа, салбарын тоо": r["n"],
+               "Таамаглал (нийт)": round(fc) if fc is not None else None,
+               "Өмнөх өгөгдлийн ижил үе": round(ly) if ly is not None else None,
                "Өөрчлөлт %": round((fc / ly - 1) * 100, 1) if fc is not None and ly else None,
-               "Тестийн WAPE (медиан) %": round(float(np.median(r["wape"])) * 100, 1) if r["wape"] else None}
+               "Сарын алдаа (медиан) %": round(float(np.median(r["wape"])) * 100, 1) if r["wape"] else None}
         for m, v in zip(months, r["months"]):
-            rec[pd.Timestamp(m).strftime("%Y-%m")] = round(v, 2)
+            rec[pd.Timestamp(m).strftime("%Y-%m")] = round(v)
         out.append(rec)
     df = pd.DataFrame(out)
     return df.sort_values("Таамаглал (нийт)", ascending=False, na_position="last") if not df.empty else df
@@ -223,13 +239,20 @@ def summary_xlsx(experiment_id: int, horizon: int = Query(12), conn=Depends(get_
                          ("Сүүлийн бүтэн сар", str(ex["last_month"])),
                          ("Таамагласан сар", f"{months[0]} – {months[-1]}"), ("Нэгж", ex["unit"]),
                          ("Хэрэглэгч", f"{user['username']} {dt.datetime.now():%Y-%m-%d %H:%M}"),
-                         ("Тайлбар", rep["note"])], columns=["Талбар", "Утга"])
+                         ("Гараар засварласан", f"{rep['kpi']['n_adjusted']} засвар (системийн таамаглал "
+                                                f"{round(rep['kpi']['total_system'] or 0):,} → засвартай "
+                                                f"{round(rep['kpi']['total_final'] or 0):,})"),
+                         ("Тайлбар", rep["note"] + " Гараар зассан утгыг оруулж тооцсон.")], columns=["Талбар", "Утга"])
     detail = pd.DataFrame([{"Бүтээгдэхүүн": s["product_name"] or s["product_id"], "Код": s["product_id"],
                             "Ангилал": s["category"], "Салбар": s["branch_id"], "Нэгж": s["unit"],
-                            "Арга": s["model"], "Таамаглал (нийт)": s["total_forecast"],
-                            "Өмнөх өгөгдлийн ижил үе": s["last_year"],
+                            "Арга": s["model_label"],
+                            "Таамаглал (нийт)": round(s["total_forecast"]) if s["total_forecast"] is not None else None,
+                            "Системийн таамаглал": round(s["total_system"]) if s["total_system"] is not None else None,
+                            "Гараар зассан сар": s["n_adjusted"],
+                            "Өмнөх өгөгдлийн ижил үе": round(s["last_year"]) if s["last_year"] is not None else None,
                             "Өөрчлөлт %": round(s["growth"] * 100, 1) if s["growth"] is not None else None,
-                            **{pd.Timestamp(m).strftime("%Y-%m"): v for m, v in zip(months, s["forecast"])}}
+                            **{pd.Timestamp(m).strftime("%Y-%m"): (round(v) if v is not None else None)
+                               for m, v in zip(months, s["forecast"])}}
                            for s in rep["series"]])
     out = io.BytesIO()
     with pd.ExcelWriter(out, engine="openpyxl") as xw:
@@ -237,7 +260,11 @@ def summary_xlsx(experiment_id: int, horizon: int = Query(12), conn=Depends(get_
         _group_table(rep["series"], "category", "Ангилал", months).to_excel(xw, sheet_name="Ангиллаар", index=False)
         _group_table(rep["series"], "product", "Бүтээгдэхүүн", months).to_excel(xw, sheet_name="Бүтээгдэхүүнээр", index=False)
         _group_table(rep["series"], "branch_id", "Салбар", months).to_excel(xw, sheet_name="Салбараар", index=False)
-        detail.to_excel(xw, sheet_name="Цуваа бүрээр", index=False)
+        detail.to_excel(xw, sheet_name="Бараа, салбар бүрээр", index=False)
+        for ws in xw.book.worksheets:                 # баганын өргөнийг агуулгад тааруулна
+            for col in ws.columns:
+                width = max(len(str(c.value)) if c.value is not None else 0 for c in col[:200])
+                ws.column_dimensions[col[0].column_letter].width = min(max(width + 2, 8), 40)
     audit(conn, user["id"], "export_summary", "experiment", experiment_id, {"horizon": horizon})
     return StreamingResponse(io.BytesIO(out.getvalue()),
                              media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

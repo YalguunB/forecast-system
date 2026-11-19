@@ -73,6 +73,10 @@ def run_one(url: str, me: str) -> bool:
                             (f"finalize: {error}", job["parent_id"]))
             if job["type"] == "forecast_batch" and job["parent_id"]:
                 maybe_finalize(ctl, job["parent_id"])
+            if job["type"] == "import" and status in ("failed", "cancelled"):
+                # Импорт бүтэлгүйтсэн хувилбар «Шалгаж байна» хэвээр үлдэхгүй, давхардлын шалгалтад тооцогдохгүй
+                ctl.execute("UPDATE raw.dataset_version SET status='failed' WHERE id=%s AND status='imported'",
+                            (job["payload"]["version_id"],))
         log.info("job %s → %s", job["id"], "waiting" if outcome == WAITING else status)
         return True
 

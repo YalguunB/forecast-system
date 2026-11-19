@@ -70,7 +70,7 @@ export default function Tracking({ params }) {
             <>
               <ol>
                 <li>«Өгөгдөл оруулах» хэсэгт <b>«{t.experiment.dataset}»</b> багцыг сонгоно.</li>
-                <li>{monthLabel(t.origin_date, true)}-аас хойших борлуулалтыг агуулсан файлаа оруулна.</li>
+                <li>{monthLabel(t.origin_date, true)}аас хойших борлуулалтыг агуулсан файлаа оруулна.</li>
                 <li>Шалгалт дуусмагц энэ хуудас таамаглал, бодит хоёрыг сар бүрээр харьцуулна.</li>
               </ol>
               <button onClick={() => go("import")}>Шинэ сарын файл оруулах</button>
@@ -82,7 +82,7 @@ export default function Tracking({ params }) {
           <div className="summary">
             <div className="big">{pct(o.wape)}<small>сарын алдаа, {t.months_compared} сар</small></div>
             <div>
-              <p><span className={`grade ${g.tone}`}>{g.label}</span> {monthLabel(t.by_month[0].month, true)} – {monthLabel(t.by_month[t.by_month.length - 1].month, true)}:
+              <p><span className={`grade ${g.tone}`}>{g.label}</span> {t.by_month.length === 1 ? monthLabel(t.by_month[0].month, true) : `${monthLabel(t.by_month[0].month, true)} – ${monthLabel(t.by_month[t.by_month.length - 1].month, true)}`}:
                 {" "}таамаглал <b>{fmt(o.forecast, 0)}</b>, бодит {what} <b>{fmt(o.actual, 0)}</b>{unit ? ` ${unit}` : ""}.</p>
               <p>{biasText(o.bias)} <Help k="WAPE" /></p>
               {t.system_overall && (

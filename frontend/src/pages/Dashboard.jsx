@@ -2,7 +2,7 @@ import { api } from "../api.js";
 import { go } from "../App.jsx";
 import { useState } from "react";
 import { ErrorNote, JobProgress, Loading, useLoad } from "../components.jsx";
-import { EXP_STEPS, JOB_STATUS, JOB_TYPE, ROLE_DESC, ROLE_LABELS, accuracyLevel, branchText, dateTime, fmt, monthLabel, pct, seriesLabel } from "../labels.js";
+import { EXP_STEPS, JOB_STATUS, JOB_TYPE, ROLE_DESC, ROLE_LABELS, accuracyLevel, branchText, dateTime, fmt, monthLabel, pct, plainError, seriesLabel } from "../labels.js";
 import { biasText, trackGrade } from "./Tracking.jsx";
 
 export default function Dashboard({ user }) {
@@ -34,12 +34,12 @@ export default function Dashboard({ user }) {
     { title: "Өгөгдөл шалгах", done: cleanData,
       text: failed ? "Нэг файлд засах алдаа байна." : cleanData ? "Өгөгдөл бэлэн." : "Систем автоматаар шалгана.",
       action: hasData && { label: failed ? "Алдааг засах" : "Шалгалтыг харах", to: ["quality", failed ? { version: failed.id } : {}] } },
-    { title: "Таамаглал бэлтгэх", done: ready.length > 0,
+    { title: "Таамаглал гаргуулах", done: ready.length > 0,
       text: inProgress ? `${inProgress.name}: ${Object.fromEntries(EXP_STEPS)[inProgress.status].toLowerCase()}.` : ready.length ? `${ready.length} таамаглал бэлэн.` : "Систем хамгийн тохирох аргыг сонгоно.",
       action: cleanData && isManager && { label: inProgress ? "Үргэлжлүүлэх" : "Шинэ таамаглал", to: ["experiments", inProgress ? { id: inProgress.id } : {}] } },
-    { title: "Үр дүн харах", done: false,
+    { title: "Барааны таамаглал", done: false,
       text: ready.length ? "Барааны таамаглал, тайлан, Excel." : "Таамаглал бэлэн болмогц харагдана.",
-      action: ready.length && { label: "Тайлан нээх", to: ["reports", { experiment: ready[0].id }] } },
+      action: ready.length > 0 && { label: "Тайлан нээх", to: ["reports", { experiment: ready[0].id }] } },
   ];
   const nextIdx = steps.findIndex((s) => !s.done);
 
@@ -111,7 +111,7 @@ export default function Dashboard({ user }) {
                 <tr key={j.id}>
                   <td>{JOB_TYPE[j.type] || j.type}</td>
                   <td><span className={`badge ${j.status === "done" ? "ok" : j.status === "failed" ? "bad" : "info"}`}>{JOB_STATUS[j.status]}</span></td>
-                  <td className="small">{j.error ? j.error.split("\n")[0] : j.progress?.stage || ""}</td>
+                  <td className="small">{j.error ? plainError(j.error) : j.progress?.stage || ""}</td>
                   <td className="small">{dateTime(j.created_at)}</td>
                 </tr>))}
               </tbody>
@@ -152,6 +152,8 @@ function Headline({ exp }) {
         <div>
           <p>{monthLabel(fm[0], true)} – {monthLabel(fm[fm.length - 1], true)}: {ss.length} барааны {whatGen} таамаглал
             {oneUnit && ch !== null ? <>, өнгөрсөн 12 сараас <b>{ch >= 0 ? "+" : "−"}{Math.abs(ch * 100).toFixed(1)}%</b></> : null}.</p>
+          {r.kpi.n_adjusted > 0 && (
+            <p className="small">Үүнд таны гараар хийсэн {r.kpi.n_adjusted} засвар орсон (системийн таамаглал {fmt(r.kpi.total_system, 0)}).</p>)}
           <p>Найдвартай байдал: <span className={`grade ${a.tone}`}>{a.label}</span> {a.text}{" "}
             {r.kpi.share_improved !== null && <>Барааны {pct(r.kpi.share_improved)}-д энгийн аргаас сайн.</>}</p>
           {t ? (
