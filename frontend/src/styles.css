@@ -211,6 +211,18 @@ details > summary { cursor: pointer; min-height: 32px; font-weight: 500; }
 .fc-stat.main { background: var(--sky); border-color: var(--sky); color: #fff; }
 .fc-stat.main > span, .fc-stat.main small { color: rgba(255, 255, 255, 0.82); }
 .fc-stat.main > b { font-size: 2.4rem; }
+/* Таамагласан ба бодитыг ижил хэмжүүрээр харьцуулах зурвас (картын хоосон зайг утгатай болгоно) */
+.fc-bar { position: relative; height: 8px; border-radius: 999px; background: var(--line); margin-top: auto; overflow: hidden; }
+.fc-stat > small + .fc-bar { margin-top: 0.75rem; }
+.fc-bar > i { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 999px; background: var(--ink-2); }
+.fc-stat.main .fc-bar { background: rgba(255, 255, 255, 0.25); }
+.fc-stat.main .fc-bar > i { background: #fff; }
+.fc-bar.div { overflow: visible; }
+.fc-bar.div::after { content: ""; position: absolute; left: calc(50% - 1px); top: -4px; bottom: -4px; width: 2px; background: var(--ink-3); border-radius: 1px; }
+.fc-bar.div > i { border-radius: 0; }
+.fc-bar.div.ok > i { background: var(--ok); }
+.fc-bar.div.warn > i { background: var(--saffron); }
+.fc-bar-scale { display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--ink-3); margin-top: 0.3rem; }
 .fc-notes { list-style: none; margin: 1rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; font-size: var(--step-0); color: var(--ink-2); }
 .fc-notes li { padding-left: 1rem; position: relative; }
 .fc-notes li::before { content: ""; position: absolute; left: 0; top: 0.6em; width: 6px; height: 6px; border-radius: 50%; background: var(--line-2); }

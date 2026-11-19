@@ -139,17 +139,26 @@ function ProductHead({ f, live }) {
         </div>
       </div>
       {!live && f.period_total.actual != null && (() => {
-        const d = f.period_total.forecast / f.period_total.actual - 1;
+        const fcv = f.period_total.forecast, act = f.period_total.actual;
+        const d = fcv / act - 1;
+        const top = Math.max(fcv, act) || 1;
+        // Зөрүүний зурвас: голоос ±50% хүртэл (түүнээс их бол захад наалдана)
+        const dw = Math.min(Math.abs(d), 0.5) * 100;
         return (
           <div className="fc-stats three-up">
-            <div className="fc-stat main"><span>Таамагласан</span><b>{fmt(f.period_total.forecast, 0)}</b><small>{f.unit}</small></div>
-            <div className="fc-stat"><span>Бодит</span><b>{fmt(f.period_total.actual, 0)}</b><small>{f.unit}</small></div>
+            <div className="fc-stat main"><span>Таамагласан</span><b>{fmt(fcv, 0)}</b><small>{f.unit}</small>
+              <div className="fc-bar" aria-hidden="true"><i style={{ width: `${(100 * fcv) / top}%` }} /></div></div>
+            <div className="fc-stat"><span>Бодит</span><b>{fmt(act, 0)}</b><small>{f.unit}</small>
+              <div className="fc-bar" aria-hidden="true"><i style={{ width: `${(100 * act) / top}%` }} /></div></div>
             <div className="fc-stat"><span>Зөрүү</span><b>{d >= 0 ? "+" : "−"}{Math.abs(d * 100).toFixed(0)}%</b>
-              <small>{Math.abs(d) < 0.1 ? "ойрхон таамагласан" : d > 0 ? "илүү таамагласан" : "дутуу таамагласан"}</small></div>
+              <small>{Math.abs(d) < 0.1 ? "ойрхон таамагласан" : d > 0 ? "илүү таамагласан" : "дутуу таамагласан"}</small>
+              <div className={`fc-bar div ${Math.abs(d) < 0.1 ? "ok" : "warn"}`} aria-hidden="true">
+                <i style={d >= 0 ? { left: "50%", width: `${dw}%` } : { left: `${50 - dw}%`, width: `${dw}%` }} /></div>
+              <div className="fc-bar-scale" aria-hidden="true"><span>дутуу</span><span>0</span><span>илүү</span></div></div>
           </div>);
       })()}
       {live && (
-        <div className="fc-stats">
+        <div className={`fc-stats${k > 1 ? "" : " three-up"}`}>
           <div className="fc-stat main">
             <span>{demand ? "Эрэлт" : "Борлуулалт"}, {PERIOD_LONG[k]}</span>
             <b>{fmt(total, 0)}</b>
