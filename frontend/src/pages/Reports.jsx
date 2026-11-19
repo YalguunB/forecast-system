@@ -83,9 +83,12 @@ export default function Reports({ params }) {
     const total = sumStrict(sel.map((s) => s.total_forecast));
     const ly = sumStrict(sel.map((s) => s.last_year));
     const last12 = sum(hist.slice(-12));
+    // Менежерийн гар засвар: тоо ба системийн анхны таамаглалаас зөрүү (нийт дүнд засвар орсон)
+    const nAdj = sel.reduce((a, s) => a + (s.n_adjusted || 0), 0);
+    const adjDelta = sel.reduce((a, s) => a + ((s.total_forecast ?? 0) - (s.total_system ?? s.total_forecast ?? 0)), 0);
     const pairs = sel.filter((s) => s.test?.WAPE?.selected != null && s.test?.WAPE?.baseline != null);
     return {
-      hist, fc, lyMonths, total, ly, last12, change: change(total, ly), n,
+      hist, fc, lyMonths, total, ly, last12, change: change(total, ly), n, nAdj, adjDelta,
       wapeSel: median(sel.map((s) => s.test?.WAPE?.selected)), wapeBase: median(sel.map((s) => s.test?.WAPE?.baseline)),
       periodErr: median(sel.map((s) => s.test?.SUM_APE?.selected)),
       improved: pairs.length ? pairs.filter((s) => s.test.WAPE.selected < s.test.WAPE.baseline).length / pairs.length : null,
@@ -154,7 +157,9 @@ export default function Reports({ params }) {
         <>
           <div className="kpis">
             <Kpi label={r.experiment.target === "demand" ? "Сүүлийн 12 сарын эрэлт" : "Сүүлийн 12 сарын борлуулалт"} value={fmt(agg.last12, 0)} sub={`${r.experiment.unit}, ${sel.length} бараа`} />
-            <Kpi label={`Таамаглал: ${PERIOD_LONG[horizon]}`} value={fmt(agg.total, 0)} sub={agg.change === null ? r.experiment.unit : `${chg(agg.change)} өмнөх өгөгдлөөс`} />
+            <Kpi label={`Таамаглал: ${PERIOD_LONG[horizon]}`} value={fmt(agg.total, 0)}
+              sub={<>{agg.change === null ? r.experiment.unit : `${chg(agg.change)} өмнөх өгөгдлөөс`}
+                {agg.nAdj > 0 && <><br />Гар засвар {agg.nAdj} сар ({agg.adjDelta >= 0 ? "+" : "−"}{fmt(Math.abs(agg.adjDelta), 0)}) орсон</>}</>} />
             <Kpi label={<>Найдвартай байдал <Help k="WAPE" /></>} value={accuracyLevel(agg.wapeSel, agg.wapeBase).label}
                  sub={`сарын алдаа ${pct(agg.wapeSel)} (энгийн арга ${pct(agg.wapeBase)})`} />
             {horizon > 1 && <Kpi label={<>{PERIOD_OF[horizon]} нийт дүнгийн алдаа <Help k="SUM_APE" /></>} value={pct(agg.periodErr)} sub={exp?.preliminary ? "өнгөрсөн 3 сараар шалгасан" : "өнгөрсөн 12 сараар шалгасан"} />}

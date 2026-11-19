@@ -22,6 +22,10 @@ function List() {
   // Эрэлт бол системийн гол зорилго: нөөцийн файлгүй үед бараа дууссан өдрийг борлуулалтаас тооцоолно
   const target = form.target ?? "demand";
 
+  // Нэр бичээгүй бол өгөгдөл, огноогоор нэрлэнэ (нэр хоосон үед товч идэвхгүй болж менежер гацдаг байв)
+  const dsName = usable.find((v) => String(v.id) === String(vid))?.dataset;
+  const defaultName = `${dsName ? `${dsName} · ` : ""}${new Date().toISOString().slice(0, 10)}`;
+
   const create = async () => {
     setErr(null);
     const base = defaults.data.protocol;
@@ -31,7 +35,7 @@ function List() {
       models: base.models.filter((m) => models.includes(m.name)),
     };
     try {
-      const e = await api.post("/experiments", { name: form.name, dataset_version_id: Number(vid), target, protocol });
+      const e = await api.post("/experiments", { name: form.name.trim() || defaultName, dataset_version_id: Number(vid), target, protocol });
       // Нэг товшилт: аргуудыг турших → сонгох → шалгах → таамаглах бүгд дараалан автоматаар явагдана.
       // «Алхам бүрийг өөрөө батлах» сонгосон бол зөвхөн үүсгээд дэлгэрэнгүй хуудсанд алхам алхмаар үргэлжлүүлнэ.
       if (!form.manual) await api.post(`/experiments/${e.id}/validate?auto=true`);
@@ -41,7 +45,7 @@ function List() {
 
   return (
     <>
-      <h1>Таамаглал бэлтгэх</h1>
+      <h1>Таамаглал гаргуулах</h1>
       <div className="split">
         <div className="panel table-wrap">
           {exps.loading ? <Loading /> : exps.data?.length ? (
@@ -60,7 +64,8 @@ function List() {
         <div className="panel">
           <h3 style={{ marginTop: 0 }}>Шинэ таамаглал</h3>
           <label htmlFor="n">Нэр</label>
-          <input id="n" value={form.name} placeholder="Жишээ: 2025 он" onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <input id="n" value={form.name} placeholder={defaultName} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <p className="small muted" style={{ margin: "4px 0 0" }}>Хоосон орхивол «{defaultName}» гэж нэрлэнэ.</p>
           <label htmlFor="v" style={{ marginTop: 8 }}>Өгөгдөл</label>
           <select id="v" value={form.version} onChange={(e) => setForm({ ...form, version: e.target.value })}>
             {usable.map((v) => <option key={v.id} value={v.id}>{v.dataset} ({v.date_min} – {v.date_max})</option>)}
@@ -120,7 +125,7 @@ function List() {
           </label>
           </details>
           <p className="small muted" style={{ margin: "0.6rem 0 0" }}>Систем аргуудыг өнгөрсөн саруудад туршиж, хамгийн бага алдсаныг сонгоод ирэх {info?.preliminary ? "3" : "12"} сарыг таамаглана. Хэдэн минут болно.</p>
-          <button style={{ marginTop: 8 }} disabled={!form.name || !usable.length || !defaults.data || (info && info.full_months < (info.prelim_min_months || info.min_months || 18))} onClick={create}>{form.manual ? "Үүсгэх" : "Таамаглал гаргуулах"}</button>
+          <button style={{ marginTop: 8 }} disabled={!usable.length || !defaults.data || (info && info.full_months < (info.prelim_min_months || info.min_months || 18))} onClick={create}>{form.manual ? "Үүсгэх" : "Таамаглал гаргуулах"}</button>
           {!usable.length && <p className="small muted">Эхлээд өгөгдөл оруулж шалгана уу.</p>}
           <ErrorNote error={err} />
         </div>

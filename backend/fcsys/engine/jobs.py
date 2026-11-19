@@ -137,7 +137,10 @@ def handle_import(conn, job: dict, url: str) -> None:
                   tx["branch_ext_id"], tx["qty"], tx["unit"], tx["amount"], tx["is_return"],
                   tx["order_status"], tx["is_cancelled"]))
 
-    aux = {k: ingest.parse_aux(k, path) for k, path in (p.get("aux") or {}).items()}
+    try:
+        aux = {k: ingest.parse_aux(k, path) for k, path in (p.get("aux") or {}).items()}
+    except ValueError as exc:                     # туслах файлын багана дутуу → ойлгомжтой мессеж
+        raise JobError(str(exc)) from exc
     set_progress(url, job["id"], stage="Чанарын шалгалт", rows=len(tx))
     today = dt.date.fromisoformat(p.get("today") or dt.date.today().isoformat())
     res = dq.validate_transactions(tx, today, mapping.get("unit_conversions"), aux.get("price"))

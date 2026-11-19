@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from ...db import audit, jsonb
 from ...engine.grid import TARGET_LABELS
+from ...labels import model_label
 from ...engine.monthly import monthly_target
 from ...engine.jobs import maybe_finalize
 from ...engine.store import load_daily
@@ -111,7 +112,7 @@ def export_forecasts(experiment_id: int, split: str = "live", format: str = Quer
         raise not_found("Туршилт", experiment_id)
     require_monthly(e)
     rows = conn.execute(
-        "SELECT s.product_id, s.product_name, s.product_category, s.branch_id, s.unit, r.run_id, r.model, "
+        "SELECT s.product_id, s.product_name, s.product_category, s.branch_id, s.unit, r.run_id, r.model, r.params, "
         "fv.origin_date AS last_known_month, fv.h AS month_ahead, fv.target_date AS target_month, fv.y_hat, fv.q_lo, fv.q_hi, "
         "(SELECT a.adjusted_value FROM governance.forecast_adjustment a WHERE a.run_id=fv.run_id AND "
         " a.series_id=fv.series_id AND a.target_date=fv.target_date ORDER BY a.created_at DESC LIMIT 1) AS adjusted_value "
@@ -123,6 +124,9 @@ def export_forecasts(experiment_id: int, split: str = "live", format: str = Quer
         " ORDER BY coalesce(s.product_name, s.product_id), s.branch_id, fv.origin_date, fv.h",
         [experiment_id, split, *scope_sql(user)[1]]).fetchall()
     df = pd.DataFrame(rows)
+    if not df.empty:
+        params = df.pop("params")
+        method = [model_label(m, p) for m, p in zip(df["model"], params)]
     label = TARGET_LABELS[e["target"]]
     periods = pd.DataFrame()
     if not df.empty:
@@ -153,16 +157,45 @@ def export_forecasts(experiment_id: int, split: str = "live", format: str = Quer
         return StreamingResponse(io.BytesIO(buf.getvalue().encode("utf-8-sig")), media_type="text/csv",
                                  headers={"Content-Disposition": f'attachment; filename="{fname}.csv"'})
     out = io.BytesIO()
-    meta = pd.DataFrame([("Зорилт", label), ("Туршилт", f"#{e['id']} {e['name']}"), ("Хуваалт", split),
+    # Менежерт: бараа бүр нэг мөр, сар бүр нэг багана (засвартай эцсийн утга, бүхэл тоо).
+    # Шалгалтын (split=test) экспорт олон эхлэлтэй тул эхлэл бүрийг тусад нь мөр болгоно.
+    nice = pd.DataFrame()
+    detail = pd.DataFrame()
+    if not df.empty:
+        df["Арга"] = method
+        idx = ["product_name", "product_id", "branch_id", "unit", "Арга"] + (["last_known_month"] if split != "live" else [])
+        w = df.assign(product_name=df["product_name"].fillna(df["product_id"]),
+                      m=pd.to_datetime(df["target_month"]).dt.strftime("%Y-%m"))
+        nice = w.pivot_table(index=idx, columns="m", values="final_value", aggfunc="sum").round(0)
+        nice["Нийт"] = nice.sum(axis=1)
+        nice = nice.reset_index().rename(columns={"product_name": "Бараа", "product_id": "Код", "branch_id": "Салбар",
+                                                  "unit": "Нэгж", "last_known_month": "Сүүлийн мэдэгдэх сар"})
+        detail = pd.DataFrame({
+            "Бараа": w["product_name"], "Код": w["product_id"], "Салбар": w["branch_id"], "Нэгж": w["unit"],
+            "Арга": w["Арга"], "Сар": w["m"], "Хэдэн сарын дараах": w["month_ahead"],
+            "Системийн таамаглал": w["y_hat"].astype(float).round(1),
+            "Доод хязгаар (80%)": pd.to_numeric(w["q_lo"], errors="coerce").round(1),
+            "Дээд хязгаар (80%)": pd.to_numeric(w["q_hi"], errors="coerce").round(1),
+            "Гараар зассан": pd.to_numeric(w["adjusted_value"], errors="coerce").round(1),
+            "Эцсийн утга": w["final_value"].astype(float).round(1)})
+    meta = pd.DataFrame([("Зорилт", label), ("Таамаглал", f"#{e['id']} {e['name']}"),
+                         ("Төрөл", "Ирээдүйн таамаглал" if split == "live" else "Өнгөрсөн саруудаар шалгасан таамаглал"),
                          ("Өгөгдөл", f"{e['dataset']} v{e['version_no']}"), ("sha256", e["sha256"]),
                          ("protocol_hash", e["protocol_hash"]), ("selection_hash", e["selection_hash"]),
                          ("Экспортолсон", f"{user['username']} {dt.datetime.now():%Y-%m-%d %H:%M}"),
-                         ("Тайлбар", "y_hat = загварын анхны таамаглал; adjusted_value = хэрэглэгчийн залруулга (тусдаа)")],
+                         ("Тайлбар", "«Эцсийн утга» = гараар зассан бол засвар, үгүй бол системийн таамаглал. "
+                                     "Улирал, жилийн дүн = сар бүрийн таамаглалын нийлбэр.")],
                         columns=["Талбар", "Утга"])
     with pd.ExcelWriter(out, engine="openpyxl") as xw:
+        nice.to_excel(xw, sheet_name="Таамаглал", index=False)
+        detail.to_excel(xw, sheet_name="Сар бүрээр", index=False)
+        periods.round(1).to_excel(xw, sheet_name="Сар, улирал, жилийн нийлбэр", index=False)
         meta.to_excel(xw, sheet_name="Мэдээлэл", index=False)
-        df.to_excel(xw, sheet_name="Сар бүрээр", index=False)
-        periods.to_excel(xw, sheet_name="Сар, улирал, жилийн нийлбэр", index=False)
+        df.drop(columns=["Арга"], errors="ignore").to_excel(xw, sheet_name="Техникийн", index=False)
+        for ws in xw.book.worksheets:                 # баганын өргөнийг агуулгад тааруулна
+            for col in ws.columns:
+                width = max(len(str(c.value)) if c.value is not None else 0 for c in col[:200])
+                ws.column_dimensions[col[0].column_letter].width = min(max(width + 2, 8), 40)
     return StreamingResponse(io.BytesIO(out.getvalue()),
                              media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={"Content-Disposition": f'attachment; filename="{fname}.xlsx"'})

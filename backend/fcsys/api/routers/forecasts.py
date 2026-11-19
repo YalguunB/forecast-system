@@ -144,6 +144,13 @@ def get_forecast(experiment_id: int, series: int, horizon: int = Query(12), spli
     runs = conn.execute("SELECT DISTINCT r.run_id, r.model, r.params, r.role FROM experiment.run r JOIN "
                         "forecast.forecast_value fv ON fv.run_id=r.run_id WHERE r.experiment_id=%s AND r.phase=%s "
                         "AND fv.series_id=%s ORDER BY r.run_id", (experiment_id, split, series)).fetchall()
+    # Аль хүрээнд (сар/улирал/жил) сонгогдсоныг арга бүрд нэмнэ — «(сонгосон)» гэж хоёр арга гарахад ялгана
+    picked = conn.execute("SELECT ms.horizon, vr.model, vr.params FROM experiment.model_selection ms "
+                          "JOIN experiment.run vr ON vr.run_id=ms.run_id WHERE ms.experiment_id=%s AND ms.series_id=%s",
+                          (experiment_id, series)).fetchall()
+    for r in runs:
+        r["selected_for"] = sorted(p["horizon"] for p in picked
+                                   if p["model"] == r["model"] and (p["params"] or {}) == (r["params"] or {}))
     states = d["day_state"].value_counts().to_dict()
     return {
         "grain": "month",

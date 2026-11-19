@@ -38,7 +38,7 @@ export const SEVERITY = { blocking: "Заавал засах", warning: "Анх�
 export const SEVERITY_NOTE = { blocking: "Засвар шаардлагатай", warning: "Шийдвэрлэх", info: "Зөвхөн мэдээлэл" };
 export const ACTIONS = { open: "Шийдээгүй", accepted: "Зөвшөөрсөн", corrected: "Зассан", excluded: "Хассан" };
 // Менежерт харагдах аргын нэр — энгийн монголоор (техник нэр MODEL_PLAIN[m].short-д)
-export const MODEL_LABELS = { ma: "3 сарын дундаж", naive: "Өнгөрсөн сар", snaive: "Өмнөх өгөгдлийн мөн сар", ets: "Чиг хандлага, улирал", sarima: "Улирлын загвар", croston: "Ховор барааны арга", sba: "Ховор барааны арга (засвартай)", combo: "Хосолсон арга" };
+export const MODEL_LABELS = { ma: "3 сарын дундаж", naive: "Өнгөрсөн сар", snaive: "Өмнөх өгөгдлийн мөн сар", ets: "Чиг хандлага, улирал", sarima: "Улирлын загвар", croston: "Тэгшитгэсэн дундаж (Croston)", sba: "Тэгшитгэсэн дундаж (SBA)", combo: "Хосолсон арга" };
 // "ets {\"trend\": \"add\"}" хэлбэрийн шошгоос энгийн нэр
 export const runName = (lbl) => {
   const [m, ...rest] = String(lbl).split(" ");
@@ -77,8 +77,8 @@ export const MODEL_PLAIN = {
   ets: { name: "Чиг хандлага, улирал", short: "ETS", desc: "Сүүлийн саруудад илүү жин өгч, өсөлт ба улирлыг тооцно." },
   sarima: { name: "Улирлын загвар", short: "SARIMA", desc: "Өмнөх сарууд болон өмнөх өгөгдлийн мөн сараас тооцно. 3-аас дээш жилийн өгөгдөл хэрэгтэй." },
   combo: { name: "Хосолсон арга", short: "Combination", desc: "Гурван аргын (чиг хандлага-улирал, өсөлттэй хувилбар, улирлын загвар) таамаглалын дундаж. Нэг арга алдахад бусад нь нөхдөг тул тогтвортой." },
-  croston: { name: "Ховор барааны арга", short: "Croston", desc: "Сар бүр зарагддаггүй бараанд зориулсан." },
-  sba: { name: "Ховор барааны арга (засвартай)", short: "SBA", desc: "Croston аргын хэт өндөр таамаглахаас сэргийлсэн хувилбар." },
+  croston: { name: "Тэгшитгэсэн дундаж (Croston)", short: "Croston", desc: "Сүүлийн саруудын дунджийг тэгшитгэж, ирэх сар бүрд ижил түвшин таамаглана. Зарим сар зарагддаггүй бараанд зориулсан ч тогтвортой бараанд ч сайн ажилладаг." },
+  sba: { name: "Тэгшитгэсэн дундаж (SBA)", short: "SBA", desc: "Croston аргын хэт өндөр таамаглахаас сэргийлсэн хувилбар. Ирэх сар бүрд ижил түвшин таамаглана." },
 };
 export const modelName = (m) => (MODEL_PLAIN[m] ? `${MODEL_PLAIN[m].name} (${MODEL_PLAIN[m].short})` : m);
 
@@ -136,10 +136,12 @@ export const RULE_PLAIN = {
 // Сарын WAPE-ээс ойлгомжтой үнэлгээ; суурь аргатай харьцуулалт өгвөл түүнийг ч тооцно
 export function accuracyLevel(wape, baseline) {
   if (wape === null || wape === undefined) return { label: "Тодорхойгүй", tone: "", text: "Шалгах өгөгдөл хүрэлцээгүй." };
-  const better = baseline === null || baseline === undefined || wape < baseline;
+  const cmp = vsBaseline(wape, baseline);           // null = харьцуулах энгийн арга алга
+  const better = cmp !== "worse";
+  const same = cmp === "same" ? " Энгийн аргатай адил." : "";
   const w = `Сарын алдаа ${(wape * 100).toFixed(0)}%.`;
-  if (wape < 0.2 && better) return { label: "Сайн", tone: "ok", text: w };
-  if (wape < 0.4 && better) return { label: "Дунд", tone: "warn", text: `${w} Ерөнхий чиг хандлагыг харахад тохиромжтой.` };
+  if (wape < 0.2 && better) return { label: "Сайн", tone: "ok", text: w + same };
+  if (wape < 0.4 && better) return { label: "Дунд", tone: "warn", text: `${w}${same} Ерөнхий чиг хандлагыг харахад тохиромжтой.` };
   if (!better) return { label: "Энгийн аргаас муу", tone: "warn", text: `${w} Энгийн арга ${(baseline * 100).toFixed(0)}%. Болгоомжтой ашиглана уу.` };
   return { label: "Сул", tone: "bad", text: `${w} Алдаа өндөр.` };
 }
@@ -189,3 +191,24 @@ export const dateTime = (iso) => {
 // Урьдчилсан таамаглал (< 18 сар): жилийн хугацаа байхгүй
 export const horizonsFor = (exp) => (exp?.preliminary ? HORIZONS.filter(([h]) => h !== 12) : HORIZONS);
 export const PRELIM_NOTE = "Урьдчилсан таамаглал: өгөгдөл 18 сар хүрэхгүй тул зөвхөн энгийн аргаар сар, улирлын таамаглал гаргасан. Найдвартай эсэх нь тодорхойгүй. 18 сар хүрмэгц дахин гаргуулна уу.";
+
+// Ажлын алдааны эхний мөр, Python-ий төрлийн нэргүй («ValueError: …» → «…»)
+export function plainError(err) {
+  return String(err || "").split("\n")[0].replace(/^[A-Za-z_.]*(Error|Exception):\s*/, "");
+}
+
+// Сонгосон арга энгийн аргатай харьцуулахад: 0.5 пунктээс бага зөрүүг «адил» гэж үзнэ (тэнцүү үед
+// нэг газар «муу», нөгөөд «сайн» гэж зөрчилдөхөөс сэргийлнэ)
+export function vsBaseline(wape, baseline) {
+  if (wape === null || wape === undefined || baseline === null || baseline === undefined) return null;
+  if (Math.abs(wape - baseline) < 0.005) return "same";
+  return wape < baseline ? "better" : "worse";
+}
+
+// Хувилбарын төлөв: импорт өөрөө бүтэлгүйтсэн (мөр хадгалагдаагүй) бол «Бүтэлгүй»,
+// мөртэй боловч засах алдаатай бол «Алдаатай»
+export const versionStatus = (v) => (v.status === "failed" && v.row_count == null ? "Бүтэлгүй" : VERSION_STATUS[v.status]);
+export const importFailed = (v) => v && v.status === "failed" && v.row_count == null;
+
+// Файлын анхны утга: хоосон нүд pandas-аас «nan»/«None» болж ирдэг
+export const rawValue = (v) => (v === null || v === undefined || ["", "nan", "none", "nat", "<na>"].includes(String(v).trim().toLowerCase()) ? "(хоосон)" : v);

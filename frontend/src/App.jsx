@@ -25,7 +25,9 @@ const SCREENS = [
   { path: "admin", title: "Хэрэглэгч ба эрх", roles: ["admin"], el: Admin },
 ];
 
-const initials = (n) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
+// Үсгээр эхэлсэн эхний хоёр үгийн эхний үсэг («Болормаа (менежер)» → «БМ», хаалт, тэмдэгтийг алгасна)
+const initials = (n) => n.split(/\s+/).map((w) => w.replace(/[^\p{L}]/gu, "")).filter(Boolean).slice(0, 2)
+  .map((w) => w[0].toUpperCase()).join("") || "?";
 
 // Тэмдэг: өсөх гурван багана, сүүлийнх нь таамаглал (тасархай)
 export function Mark() {
@@ -53,8 +55,9 @@ export function go(path, params = {}) {
 export default function App() {
   const [route, setRoute] = useState(parseHash());
   const [s, setS] = useState(session.get());
+  const [menu, setMenu] = useState(false);          // утсан дээрх эвхдэг цэс
   useEffect(() => {
-    const on = () => { setRoute(parseHash()); setS(session.get()); };
+    const on = () => { setRoute(parseHash()); setS(session.get()); setMenu(false); };
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);
@@ -66,9 +69,12 @@ export default function App() {
   const El = screen.el;
   return (
     <div className="shell">
-      <header className="topbar">
+      <header className={`topbar${menu ? " open" : ""}`}>
         <a className="brand" href="#/dashboard"><Mark />Таамаглал</a>
-        <nav className="nav" aria-label="Үндсэн цэс">
+        <button className="quiet menu-btn" aria-expanded={menu} aria-controls="main-nav" onClick={() => setMenu(!menu)}>
+          {menu ? "Хаах" : `Цэс · ${screen.short || screen.title}`}
+        </button>
+        <nav className="nav" id="main-nav" aria-label="Үндсэн цэс">
           {visible.map((x, i) => (
             <Fragment key={x.path}>
               {/* Менежерийн 4 алхмын дараа бусад хуудсыг зураасаар тусгаарлана */}

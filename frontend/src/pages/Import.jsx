@@ -10,10 +10,11 @@ const FIELD_LABELS = {
 };
 // [талбар, гарчиг, юунд хэрэгтэй, файлын баганууд]
 const AUX = [
-  ["inventory_file", "Нөөцийн үлдэгдэл", "Эрэлт таамаглахад хэрэгтэй", "date, product_id, branch_id, on_hand, available, reliability"],
-  ["calendar_file", "Ажлын хуваарь", "Хаалттай өдрүүдийг ялгана", "date, branch_id, is_open"],
-  ["price_file", "Үнэ", "Үнийн өөрчлөлт", "date, product_id, branch_id, price, price_kind, known_at"],
-  ["promotion_file", "Урамшуулал", "Урамшууллын хугацаа", "date_from, date_to, product_id, branch_id, known_at"],
+  // Баганыг монгол эсвэл англи нэрээр нь таньна (backend: ingest.AUX_HINTS)
+  ["inventory_file", "Нөөцийн үлдэгдэл", "Эрэлт таамаглахад хэрэгтэй", "Огноо, Барааны код, Салбар, Үлдэгдэл (эсвэл Борлуулах боломжтой 1/0)"],
+  ["calendar_file", "Ажлын хуваарь", "Хаалттай өдрүүдийг ялгана", "Огноо, Салбар, Нээлттэй (1/0)"],
+  ["price_file", "Үнэ", "Үнийн өөрчлөлт", "Огноо, Барааны код, Салбар, Үнэ"],
+  ["promotion_file", "Урамшуулал", "Урамшууллын хугацаа", "Эхлэх огноо, Дуусах огноо, Барааны код, Салбар"],
 ];
 const DATE_FORMATS = [
   ["", "Автоматаар таних"], ["%Y-%m-%d", "2024-01-31"], ["%Y/%m/%d", "2024/01/31"], ["%Y.%m.%d", "2024.01.31"],
@@ -37,6 +38,7 @@ export default function Import() {
   const [err, setErr] = useState(null);
   const [job, setJob] = useState(null);
   const [dup, setDup] = useState(null);
+  const [jobDone, setJobDone] = useState(null);          // дууссан ажлын төлөв (done / failed / cancelled)
 
   const toMapping = async () => {
     setErr(null);
@@ -111,16 +113,25 @@ export default function Import() {
             )}
           </div>
           <label htmlFor="f" style={{ marginTop: "1rem" }}>Борлуулалтын файл (CSV эсвэл Excel)</label>
-          <input id="f" type="file" accept=".csv,.xlsx,.xls" onChange={(e) => setFile(e.target.files[0])} />
-          <button style={{ marginTop: "1rem" }} disabled={!file || (!ds && !newName.trim())} onClick={toMapping}>
-            Үргэлжлүүлэх
-          </button>
+          <input id="f" type="file" accept=".csv,.xlsx,.xls" onChange={(e) => {
+            const f = e.target.files[0];
+            setFile(f);
+            // Шинэ багцын нэр хоосон бол файлын нэрийг санал болгоно (менежер дараа нь засаж болно)
+            if (f && !ds && !newName.trim()) setNewName(f.name.replace(/\.[^.]+$/, "").replace(/[_]+/g, " ").trim());
+          }} />
+          <div className="row" style={{ marginTop: "1rem", alignItems: "center" }}>
+            <button disabled={!file || (!ds && !newName.trim())} onClick={toMapping}>Үргэлжлүүлэх</button>
+            {(!file || (!ds && !newName.trim())) && (
+              <span className="small muted">{!file ? "Борлуулалтын файлаа сонгоно уу." : "Багцын нэр оруулна уу."}</span>)}
+          </div>
         </div>
       )}
 
       {step === 2 && preview && (
         <div className="panel">
           <h3>Баганууд</h3>
+          {preview.mapping_from_version && (
+            <p className="notice small">Өмнөх файлын ({preview.mapping_from_version}-р хувилбар) баганын тохиргоог ашиглав. Шалгаад «Оруулах» дарна уу.</p>)}
           <MappingTable preview={preview} mapping={mapping} setMapping={setMapping} />
           {(!mapping.branch_id || !mapping.unit) && (
             <div className="row" style={{ marginTop: "1rem" }}>
@@ -177,16 +188,22 @@ export default function Import() {
           <div className="row" style={{ marginTop: "1rem" }}>
             <button className="quiet" onClick={() => setStep(1)}>Буцах</button>
             <button onClick={() => submit(false)} disabled={preview.required.some((x) => !mapping[x] && !["branch_id", "unit"].includes(x))}>Оруулах</button>
-            <span className="small muted" style={{ alignSelf: "center" }}>Анхны файл өөрчлөгдөхгүй.</span>
+            <span className="small muted" style={{ alignSelf: "center" }}>
+              {preview.required.some((x) => !mapping[x] && !["branch_id", "unit"].includes(x))
+                ? "Шар мөрийн баганыг сонгоно уу." : "Анхны файл өөрчлөгдөхгүй."}</span>
           </div>
         </div>
       )}
 
       {step === 3 && job && (
         <>
-          <p>Файл хадгалагдлаа. Систем шалгаж байна.</p>
-          <JobProgress jobId={job.job_id} onDone={() => {}} />
-          <button onClick={() => go("quality", { version: job.version_id })}>Үр дүнг харах</button>
+          <p>{!jobDone ? "Файл хадгалагдлаа. Систем шалгаж байна."
+            : jobDone === "done" ? "Шалгалт дууслаа. Үр дүнг харна уу."
+            : "Файлыг оруулж чадсангүй. Доорх алдааг засаад дахин оруулна уу."}</p>
+          <JobProgress jobId={job.job_id} onDone={(j) => setJobDone(j.status)} />
+          {jobDone && jobDone !== "done"
+            ? <button onClick={() => { setStep(2); setJob(null); setJobDone(null); setErr(null); }}>Дахин оруулах</button>
+            : <button onClick={() => go("quality", { version: job.version_id })}>Үр дүнг харах</button>}
         </>
       )}
     </>

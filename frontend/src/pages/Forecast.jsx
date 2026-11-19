@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { api } from "../api.js";
 import { go } from "../App.jsx";
 import { ErrorNote, Help, Intro, Loading, Plot, plotLayout, useLoad } from "../components.jsx";
-import { HORIZONS, PERIOD_LONG, STATES, accuracyLevel, fmt, monthLabel, seriesLabel, MODEL_LABELS, PERIOD_OF, horizonsFor, PRELIM_NOTE } from "../labels.js";
+import { HORIZONS, PERIOD_LONG, STATES, accuracyLevel, fmt, monthLabel, seriesLabel, MODEL_LABELS, PERIOD_OF, horizonsFor, PRELIM_NOTE, vsBaseline } from "../labels.js";
 
 const METRIC_LABELS = { WAPE: "Сарын алдаа, %", SUM_APE: "Нийт дүнгийн алдаа, %", MAE: "Дундаж зөрүү", Bias: "Хазайлт",
   SUM_AE: "Нийт дүнгийн зөрүү", COVERAGE: "Хүрээнд багтсан", RMSE: "RMSE", MASE: "MASE", RMSSE: "RMSSE", WIDTH: "Хүрээний өргөн", PINBALL: "Pinball" };
@@ -69,7 +69,8 @@ export default function Forecast({ params, user }) {
                 </select></div>
               <div><label htmlFor="r">Арга</label>
                 <select id="r" value={f.run_id} onChange={(e) => nav({ run: e.target.value })}>
-                  {f.available_runs.map((r) => <option key={r.run_id} value={r.run_id}>{MODEL_LABELS[r.model] || r.model}{r.role === "baseline" ? " (энгийн арга)" : " (сонгосон)"}</option>)}
+                  {f.available_runs.map((r) => <option key={r.run_id} value={r.run_id}>{MODEL_LABELS[r.model] || r.model}{r.role === "baseline" && !r.selected_for?.length ? " (энгийн арга)"
+                    : r.selected_for?.length ? ` (сонгосон: ${r.selected_for.map((h) => ({ 1: "сар", 3: "улирал", 12: "жил" })[h] || h).join(", ")})` : ""}</option>)}
                 </select></div>
             </div>
           )}
@@ -181,9 +182,10 @@ function ForecastChart({ f }) {
     t.push({ x: f.history.map((h) => h.month), y: f.history.map((h) => h.value), name: "Өмнөх сарууд", type: "scatter",
       mode: "lines+markers", marker: { size: 4 }, line: { color: ink, width: 1.6 }, connectgaps: false,
       customdata: f.history.map((h) => h.reason || ""), hovertemplate: "%{y:,.0f}<extra>%{customdata}</extra>" });
-    const gaps = f.history.filter((h) => h.value === null);
-    if (gaps.length) t.push({ x: gaps.map((h) => h.month), y: gaps.map(() => 0), name: "Тодорхойгүй сар", type: "scatter", mode: "markers",
-      marker: { symbol: "x", size: 8, color: STATES.missing.color }, customdata: gaps.map((h) => h.reason), hovertemplate: "%{customdata}<extra></extra>" });
+    // Тодорхойгүй сар нь графикт саарал зурвас (gapBands) болно; 0 дээр цэг тавибал «борлуулалт 0» мэт харагдана.
+    // Энд зөвхөн тайлбарт (legend) харагдах хоосон мөр нэмнэ.
+    if (f.history.some((h) => h.value === null)) t.push({ x: [f.history[0].month], y: [null], name: "Тодорхойгүй сар (өгөгдөлгүй)",
+      type: "scatter", mode: "markers", marker: { symbol: "square", size: 12, color: "rgba(128,140,150,0.35)" }, hoverinfo: "skip" });
     if (f.actual.length) t.push({ x: f.actual.map((h) => h.month), y: f.actual.map((h) => h.value), name: "Бодит борлуулалт", type: "scatter",
       mode: "markers", marker: { color: ink, size: 9, symbol: "circle-open", line: { width: 2 } }, hovertemplate: "%{y:,.0f}" });
     if (f.interval.available) {
@@ -199,12 +201,25 @@ function ForecastChart({ f }) {
       type: "scatter", mode: "markers", marker: { color: saffron, size: 11, symbol: "diamond" }, hovertemplate: "%{y:,.0f}" });
     return t;
   }, [f]);
+  // Дараалсан тодорхойгүй саруудыг нэг зурвас болгоно (сар бүрийн эхнээс дараагийн сарын эх хүртэл)
+  const gapBands = useMemo(() => {
+    const out = [];
+    const next = (m) => { const d = new Date(`${m}T00:00:00Z`); d.setUTCMonth(d.getUTCMonth() + 1); return d.toISOString().slice(0, 10); };
+    for (const h of f.history) {
+      if (h.value !== null) continue;
+      const shift = (m) => { const d = new Date(`${m}T00:00:00Z`); d.setUTCDate(d.getUTCDate() - 15); return d.toISOString().slice(0, 10); };
+      const x0 = shift(h.month), x1 = shift(next(h.month));
+      if (out.length && out[out.length - 1].x1 === x0) out[out.length - 1].x1 = x1;
+      else out.push({ type: "rect", x0, x1, yref: "paper", y0: 0, y1: 1, fillcolor: "rgba(128,140,150,0.16)", line: { width: 0 }, layer: "below" });
+    }
+    return out;
+  }, [f]);
   return (
     <Plot data={traces} useResizeHandler style={{ width: "100%", height: 400 }} config={{ displayModeBar: false, responsive: true }}
       layout={plotLayout({
         xaxis: { type: "date", tickformat: "%Y.%m", dtick: "M3", gridcolor: "rgba(128,140,150,0.15)" },
         yaxis: { gridcolor: "rgba(128,140,150,0.15)", rangemode: "tozero", title: { text: `${f.unit} / сар` } },
-        shapes: [
+        shapes: [...gapBands,
           { type: "rect", x0: f.origin_date, x1: f.forecast[f.forecast.length - 1]?.target_date, yref: "paper", y0: 0, y1: 1, fillcolor: "rgba(58,110,165,0.06)", line: { width: 0 }, layer: "below" },
           { type: "line", x0: f.origin_date, x1: f.origin_date, yref: "paper", y0: 0, y1: 1, line: { dash: "dot", width: 1.5, color: "#4a5a63" } }],
         annotations: [
@@ -252,9 +267,10 @@ function Metrics({ f, months = 12 }) {
   const order = ["WAPE", "SUM_APE", "MAE", "Bias", "SUM_AE", "COVERAGE"].filter((k) => by[k]);
   const wS = v("WAPE"), wB = v("WAPE", "base"), mae = v("MAE"), bias = v("Bias"), sum = v("SUM_APE");
   const lines = [];
-  if (wS != null && wB != null) lines.push(wS <= wB
-    ? ["ok", "Суурь аргаас сайн", `Суурь аргаас ${Math.round((1 - wS / wB) * 100)}% бага алдсан.`]
-    : ["warn", "Суурь аргаас муу", `Суурь аргаас ${Math.round((wS / wB - 1) * 100)}% их алдсан. Болгоомжтой ашиглана уу.`]);
+  const cmp = vsBaseline(wS, wB);                   // толгойн үнэлгээтэй (accuracyLevel) ижил дүрэм
+  if (cmp === "better") lines.push(["ok", "Энгийн аргаас сайн", `Энгийн аргаас ${Math.max(1, Math.round((1 - wS / wB) * 100))}% бага алдсан.`]);
+  else if (cmp === "same") lines.push(["info", "Энгийн аргатай адил", "Алдаа нь энгийн аргатай бараг ижил."]);
+  else if (cmp === "worse") lines.push(["warn", "Энгийн аргаас муу", `Энгийн аргаас ${Math.max(1, Math.round((wS / wB - 1) * 100))}% их алдсан. Болгоомжтой ашиглана уу.`]);
   if (mae != null) lines.push(["info", "Сарын зөрүү", `Сард дунджаар ±${fmt(mae, 0)} ${f.unit}.`]);
   if (sum != null && f.horizon > 1) lines.push(["info", `${PERIOD_OF[f.horizon]} нийт`, `Дунджаар ${(sum * 100).toFixed(0)}% зөрсөн.`]);
   if (bias != null && mae) {
@@ -308,7 +324,18 @@ function Adjust({ f, date, setDate, onSaved }) {
   const [value, setValue] = useState("");
   const [reason, setReason] = useState("");
   const [err, setErr] = useState(null);
+  const [confirm, setConfirm] = useState(false);
   const orig = f.forecast.find((p) => p.target_date === date)?.y_hat;
+  const ratio = orig > 0 && value !== "" ? Number(value) / orig : null;
+  const big = ratio !== null && (ratio >= 3 || ratio <= 1 / 3);   // 3 дахин ба түүнээс их өөрчлөлт
+  const missing = value === "" ? "Шинэ утгаа оруулна уу." : reason.trim().length < 3 ? "Шалтгаанаа бичнэ үү (3+ тэмдэгт)." : null;
+  const save = async () => {
+    setErr(null);
+    try {
+      await api.post("/adjustments", { run_id: f.run_id, series_id: f.series.id, target_date: date, adjusted_value: Number(value), reason });
+      setValue(""); setReason(""); setConfirm(false); onSaved();
+    } catch (x) { setErr(x); }
+  };
   return (
     <div className="panel" id="adjust">
       <h3 style={{ marginTop: 0 }}>Гараар засах</h3>
@@ -318,16 +345,22 @@ function Adjust({ f, date, setDate, onSaved }) {
         {f.forecast.map((p) => <option key={p.target_date} value={p.target_date}>{monthLabel(p.target_date, true)} ({fmt(p.y_hat, 0)})</option>)}
       </select>
       <label htmlFor="av" style={{ marginTop: 8 }}>Шинэ утга ({f.unit})</label>
-      <input id="av" type="number" min="0" step="any" value={value} onChange={(e) => setValue(e.target.value)} placeholder={fmt(orig, 0)} />
+      <input id="av" type="number" min="0" step="any" value={value} onChange={(e) => { setValue(e.target.value); setConfirm(false); }} placeholder={fmt(orig, 0)} />
       <label htmlFor="ar" style={{ marginTop: 8 }}>Шалтгаан</label>
       <input id="ar" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Жишээ: урамшуулалтай" />
-      <button className="warn" style={{ marginTop: 8 }} disabled={value === "" || reason.trim().length < 3} onClick={async () => {
-        setErr(null);
-        try {
-          await api.post("/adjustments", { run_id: f.run_id, series_id: f.series.id, target_date: date, adjusted_value: Number(value), reason });
-          setValue(""); setReason(""); onSaved();
-        } catch (x) { setErr(x); }
-      }}>Хадгалах</button>
+      {confirm ? (
+        <div className="notice warn small" role="alert" style={{ marginTop: 8 }}>
+          Шинэ утга системийн таамаглалаас {ratio >= 1 ? `${fmt(ratio, 1)} дахин их` : `${fmt(1 / ratio, 1)} дахин бага`} байна
+          ({fmt(orig, 0)} → {fmt(Number(value), 0)}). Зөв үү?
+          <div className="row" style={{ marginTop: 6 }}>
+            <button className="warn mini" onClick={save}>Тийм, хадгалах</button>
+            <button className="quiet mini" onClick={() => setConfirm(false)}>Буцах</button>
+          </div>
+        </div>
+      ) : (
+        <button className="warn" style={{ marginTop: 8 }} disabled={!!missing} onClick={() => (big ? setConfirm(true) : save())}>Хадгалах</button>
+      )}
+      {missing && value + reason !== "" && <p className="small muted" style={{ margin: "6px 0 0" }}>{missing}</p>}
       <ErrorNote error={err} />
     </div>
   );
