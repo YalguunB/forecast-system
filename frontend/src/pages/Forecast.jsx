@@ -53,7 +53,7 @@ export default function Forecast({ params, user }) {
           </div></div>
         <div><label>Харах</label>
           <div className="seg" role="tablist">
-            {[["live", "Ирээдүй"], ["test", "Өнгөрсөнтэй харьцуулах"]].map(([v, l]) => <button key={v} role="tab" aria-selected={v === split} className={v === split ? "on" : ""} onClick={() => nav({ split: v, origin: undefined, run: undefined })}>{l}</button>)}
+            {[["live", "Ирээдүй"], ["test", "Өмнөх үетэй харьцуулах"]].map(([v, l]) => <button key={v} role="tab" aria-selected={v === split} className={v === split ? "on" : ""} onClick={() => nav({ split: v, origin: undefined, run: undefined })}>{l}</button>)}
           </div></div>
       </div>
       {exp?.preliminary && <div className="notice warn small" role="status">{PRELIM_NOTE}</div>}
