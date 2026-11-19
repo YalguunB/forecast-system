@@ -17,7 +17,7 @@ const SCREENS = [
   { path: "dashboard", title: "Нүүр", roles: null, el: Dashboard },
   { path: "import", n: 1, title: "Өгөгдөл оруулах", roles: ["manager"], el: Import },
   { path: "quality", n: 2, title: "Өгөгдөл шалгах", roles: ["executive", "manager"], el: Quality },
-  { path: "experiments", n: 3, title: "Таамаглал гаргуулах", roles: ["manager"], el: Experiments },
+  { path: "experiments", n: 3, title: "Таамаглах", roles: ["manager"], el: Experiments },
   { path: "forecast", n: 4, title: "Барааны таамаглал", roles: ["executive", "manager"], el: Forecast },
   { path: "reports", title: "Тайлан", roles: ["executive", "manager"], el: Reports },
   { path: "tracking", title: "Гүйцэтгэл", roles: ["executive", "manager"], el: Tracking },

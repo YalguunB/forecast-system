@@ -45,7 +45,7 @@ function List() {
 
   return (
     <>
-      <h1>Таамаглал гаргуулах</h1>
+      <h1>Таамаглах</h1>
       <div className="split">
         <div className="panel table-wrap">
           {exps.loading ? <Loading /> : exps.data?.length ? (
@@ -125,7 +125,7 @@ function List() {
           </label>
           </details>
           <p className="small muted" style={{ margin: "0.6rem 0 0" }}>Систем аргуудыг өнгөрсөн саруудад туршиж, хамгийн бага алдсаныг сонгоод ирэх {info?.preliminary ? "3" : "12"} сарыг таамаглана. Хэдэн минут болно.</p>
-          <button style={{ marginTop: 8 }} disabled={!usable.length || !defaults.data || (info && info.full_months < (info.prelim_min_months || info.min_months || 18))} onClick={create}>{form.manual ? "Үүсгэх" : "Таамаглал гаргуулах"}</button>
+          <button style={{ marginTop: 8 }} disabled={!usable.length || !defaults.data || (info && info.full_months < (info.prelim_min_months || info.min_months || 18))} onClick={create}>{form.manual ? "Үүсгэх" : "Таамаглах"}</button>
           {!usable.length && <p className="small muted">Эхлээд өгөгдөл оруулж шалгана уу.</p>}
           <ErrorNote error={err} />
         </div>
@@ -162,7 +162,7 @@ function Detail({ id }) {
       <div className="panel">
         {e.status === "draft" && (
           <>
-            <h3 style={{ marginTop: 0 }}>Таамаглал гаргуулах</h3>
+            <h3 style={{ marginTop: 0 }}>Таамаглах</h3>
             <p>Систем аргуудыг туршиж, сонгоод, шалгаад таамаглалыг бэлэн болгоно.</p>
             <div className="row">
               <button onClick={() => act(async () => setJob((await api.post(`/experiments/${id}/validate?auto=true`)).job_id))}>Эхлүүлэх</button>
