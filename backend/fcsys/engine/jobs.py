@@ -398,6 +398,56 @@ def handle_test(conn, job: dict, url: str) -> str:
     return WAITING
 
 
+def _combo_members(conn, run: dict, split: str, sids: list[int]) -> dict | None:
+    """Хосолсон арга (combo)-ийн бүрэлдэхүүн загварууд ижил туршилт, ижил үе шатанд аль хэдийн тооцогдсон бол
+    тэдгээрийн хадгалсан таамаглалыг буцаана — ETS, SARIMA-г дахин тааруулахгүй (combo-гийн хугацааны ~45%).
+    Бүрэлдэхүүн бүтэлгүйтсэн (run_failure) эхлэлийг анхны Combination шиг орхино. Аль нэг бүрэлдэхүүний run
+    байхгүй бол None → энгийнээр тооцно."""
+    from .models import Combination
+    member_runs = []
+    for spec in (run["params"] or {}).get("members") or Combination.DEFAULT_MEMBERS:
+        r = conn.execute("SELECT run_id FROM experiment.run WHERE experiment_id=%s AND phase=%s AND model=%s "
+                         "AND params=%s", (run["experiment_id"], run["phase"], spec["name"],
+                                           jsonb(spec.get("params") or {}))).fetchone()
+        if r is None:
+            return None
+        member_runs.append(r["run_id"])
+    vals: dict = {}
+    for r in conn.execute("SELECT run_id, series_id, origin_date, h, target_date, y_hat, q_lo, q_hi "
+                          "FROM forecast.forecast_value WHERE run_id = ANY(%s) AND split=%s AND series_id = ANY(%s)",
+                          (member_runs, split, sids)).fetchall():
+        vals.setdefault((r["run_id"], r["series_id"], r["origin_date"]), []).append(r)
+    failed = {(r["run_id"], r["series_id"], r["origin_date"]) for r in conn.execute(
+        "SELECT run_id, series_id, origin_date FROM forecast.run_failure WHERE run_id = ANY(%s) "
+        "AND series_id = ANY(%s)", (member_runs, sids)).fetchall()}
+    return {"runs": member_runs, "vals": vals, "failed": failed}
+
+
+def _combo_from_members(cache: dict, model, sid: int, ctx) -> pd.DataFrame | None:
+    """Бүрэлдэхүүний хадгалсан таамаглалын дундаж (Combination.predict-тэй ижил тооцоо). Аль нэг бүрэлдэхүүн
+    энэ эхлэлд хараахан тооцогдоогүй, эсвэл бүгд бүтэлгүйтсэн бол None."""
+    o = ctx.origin.date()
+    frames = []
+    for rid in cache["runs"]:
+        rows = cache["vals"].get((rid, sid, o))
+        if not rows or len(rows) < ctx.horizon:
+            return None                                   # бүрэлдэхүүн дуусаагүй (зэрэгцээ worker) → тооцно
+        if (rid, sid, o) in cache["failed"]:
+            continue
+        rows = sorted(rows, key=lambda r: r["h"])[:ctx.horizon]
+        frames.append(pd.DataFrame({"y_hat": [float(r["y_hat"]) for r in rows],
+                                    "q_lo": [np.nan if r["q_lo"] is None else float(r["q_lo"]) for r in rows],
+                                    "q_hi": [np.nan if r["q_hi"] is None else float(r["q_hi"]) for r in rows]}))
+    if not frames:
+        return None
+    y_hat = np.mean([f["y_hat"].values for f in frames], axis=0)
+    with_pi = [f for f in frames if f["q_lo"].notna().all()]
+    if not with_pi:
+        return model._frame(ctx, y_hat)
+    return model._frame(ctx, y_hat, np.mean([f["q_lo"].values for f in with_pi], axis=0),
+                        np.mean([f["q_hi"].values for f in with_pi], axis=0))
+
+
 def handle_forecast_batch(conn, job: dict, url: str) -> None:
     p = job["payload"]
     exp = _experiment(conn, p["experiment_id"])
@@ -416,6 +466,7 @@ def handle_forecast_batch(conn, job: dict, url: str) -> None:
         origins, section_end = [last], None
     daily = load_daily(conn, exp["dataset_version_id"], p["series_ids"])
     fb = proto["fallback"]
+    combo = _combo_members(conn, run, split, list(p["series_ids"])) if run["model"] == "combo" else None
 
     fc_rows, metric_rows, failures = [], [], []
     for i, sid in enumerate(p["series_ids"]):
@@ -426,7 +477,11 @@ def handle_forecast_batch(conn, job: dict, url: str) -> None:
         for o in origins:
             ctx = FitContext(series_id=sid, origin=o, target=exp["target"], horizon=H, seed=seed)
             model = make_model(run["model"], run["params"])
-            fc, err = run_series(model, y, ctx, make_model(fb["name"], fb.get("params")))
+            fc = _combo_from_members(combo, model, sid, ctx) if combo else None
+            if fc is not None:
+                err = None
+            else:
+                fc, err = run_series(model, y, ctx, make_model(fb["name"], fb.get("params")))
             if err:
                 failures.append((run["run_id"], sid, o.date(), err, fb["name"]))
             for r in fc.itertuples(index=False):

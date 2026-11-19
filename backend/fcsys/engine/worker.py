@@ -4,15 +4,23 @@
 авахаас сэргийлнэ. Handler бүр өөрийн гүйлгээнд ажиллана; алдаа гарвал бүх бичилт
 буцаагдаж, ажил 'failed' болно (анхны мөрийг хагас бичихгүй).
 
-Ажиллуулах:  python -m fcsys.engine.worker
+Ажиллуулах:  python -m fcsys.engine.worker            (процессын тоо: WORKER_PROCESSES, анхдагч = CPU − 1, ≤ 4)
+
+Worker унтарвал (терминал хаагдах, компьютер унтах) түүний авсан ажил «running» хэвээр үлдэж, таамаглал
+гацдаг байв. Одоо асахдаа ба сул үедээ ижил компьютер дээрх үхсэн процессын ажлыг дараалалд буцаана.
 """
 from __future__ import annotations
 
 import logging
+import multiprocessing as mp
 import os
 import socket
 import time
 import traceback
+
+# Процесс бүр нэг цөм ашиглана: олон процесс × олон BLAS урсгал нь компьютерийг дүүргэж удаашруулдаг
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_v, "1")
 
 import psycopg
 from psycopg.rows import dict_row
@@ -33,6 +41,51 @@ UPDATE governance.job
               LIMIT 1)
 RETURNING *;
 """
+
+
+def _pid_alive(pid: int) -> bool:
+    """Процесс амьд эсэх (Windows дээр os.kill процессыг алдаг тул OpenProcess ашиглана)."""
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        h = k32.OpenProcess(0x1000, False, pid)            # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        code = ctypes.c_ulong()
+        ok = k32.GetExitCodeProcess(h, ctypes.byref(code))
+        k32.CloseHandle(h)
+        return bool(ok) and code.value == 259               # STILL_ACTIVE
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def recover_stale(conn: psycopg.Connection, me: str) -> int:
+    """Энэ компьютер дээрх үхсэн worker-ийн «running» ажлыг дахин дараалалд оруулна. Handler бүр нэг гүйлгээнд
+    ажилладаг тул тасарсан ажлын бичилт буцаагдсан — дахин ажиллуулахад аюулгүй. Хүүхэд ажилтай эцэг ажил
+    (хүүхдүүдээ хүлээж байгаа validate/test) хөндөгдөхгүй."""
+    host = me.rsplit(":", 1)[0]
+    n = 0
+    rows = conn.execute(
+        "SELECT j.id, j.locked_by FROM governance.job j WHERE j.status='running' AND j.locked_by LIKE %s "
+        "AND NOT EXISTS (SELECT 1 FROM governance.job c WHERE c.parent_id=j.id)", (host + ":%",)).fetchall()
+    for r in rows:
+        pid = r["locked_by"].rsplit(":", 1)[1]
+        if r["locked_by"] == me or not pid.isdigit() or _pid_alive(int(pid)):
+            continue
+        cur = conn.execute("UPDATE governance.job SET status='queued', locked_by=NULL, started_at=NULL, "
+                           "progress = progress - 'stage' WHERE id=%s AND status='running' AND locked_by=%s",
+                           (r["id"], r["locked_by"]))
+        if cur.rowcount:
+            n += 1
+            log.warning("job %s: worker %s унтарсан тул дахин дараалалд оруулав", r["id"], r["locked_by"])
+    return n
 
 
 def claim(conn: psycopg.Connection, me: str) -> dict | None:
@@ -90,19 +143,49 @@ def drain(url: str | None = None, me: str = "inline", max_jobs: int = 10_000) ->
     return n
 
 
-def main() -> None:
+def loop(url: str) -> None:
+    """Нэг процессын ажлын давталт."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    url = get_settings().database_url
     me = f"{socket.gethostname()}:{os.getpid()}"
     idle = float(os.environ.get("WORKER_POLL_SECONDS", "1.0"))
     log.info("worker %s эхэллээ", me)
+    last_check = 0.0
     while True:
         try:
+            if time.monotonic() - last_check > 60:          # асахдаа ба минут тутам гацсан ажил шалгана
+                with psycopg.connect(url, row_factory=dict_row, autocommit=True) as c:
+                    recover_stale(c, me)
+                last_check = time.monotonic()
             if not run_one(url, me):
                 time.sleep(idle)
         except psycopg.OperationalError:
             log.exception("өгөгдлийн сантай холбогдож чадсангүй; 5 сек хүлээнэ")
             time.sleep(5)
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    url = get_settings().database_url
+    n = int(os.environ.get("WORKER_PROCESSES") or max(1, min(4, (os.cpu_count() or 2) - 1)))
+    if n <= 1:
+        loop(url)
+        return
+    # Барааны багц (forecast_batch) бие биеэсээ хамааралгүй тул олон процесс зэрэг тооцно (FOR UPDATE SKIP LOCKED)
+    log.info("worker: %s процесс", n)
+    procs = [mp.Process(target=loop, args=(url,), daemon=True) for _ in range(n)]
+    for p in procs:
+        p.start()
+    try:
+        while True:
+            for i, p in enumerate(procs):                  # унасан процессыг дахин асаана
+                if not p.is_alive():
+                    log.warning("worker процесс %s зогссон; дахин асаана", p.pid)
+                    procs[i] = mp.Process(target=loop, args=(url,), daemon=True)
+                    procs[i].start()
+            time.sleep(5)
+    except KeyboardInterrupt:
+        for p in procs:
+            p.terminate()
 
 
 if __name__ == "__main__":

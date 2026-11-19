@@ -221,6 +221,15 @@ def get_job(job_id: int, conn=Depends(get_conn, scope="function"), user=Depends(
     done = counts.get("done", 0) + counts.get("failed", 0) + counts.get("cancelled", 0)
     j["children"] = counts
     j["percent"] = 100 if j["status"] == "done" else (round(100 * done / total) if total else None)
+    # Гацсан эсэх: хүлээгдэж буй ажил байхад сүүлийн 30 секундэд юу ч эхлээгүй/дуусаагүй бол worker
+    # асаагүй (эсвэл бусад ажил дуусахыг хүлээж) байна — менежерт шалтгааныг хэлнэ
+    idle = conn.execute("SELECT extract(epoch FROM now() - greatest(max(started_at), max(finished_at), max(created_at)))"
+                        "::int AS s FROM governance.job WHERE id=%s OR parent_id=%s", (job_id, job_id)).fetchone()["s"]
+    waiting = j["status"] == "queued" or (j["status"] == "running" and total and not counts.get("running")
+                                           and counts.get("queued"))
+    j["stalled"] = bool(waiting and (idle or 0) > 30)
+    j["ahead"] = conn.execute("SELECT count(*) AS n FROM governance.job WHERE parent_id IS NULL AND id < %s "
+                              "AND status IN ('queued','running')", (job_id,)).fetchone()["n"] if j["stalled"] else 0
     return j
 
 
