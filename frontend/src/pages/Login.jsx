@@ -24,7 +24,7 @@ export default function Login({ onLogin }) {
         <ol>
           <li><span>1</span>Файлаа оруулна</li>
           <li><span>2</span>Систем шалгана</li>
-          <li><span>3</span>Таамаглал гаргуулна</li>
+          <li><span>3</span>Таамаглана</li>
           <li><span>4</span>Тайлангаа харна</li>
         </ol>
       </section>

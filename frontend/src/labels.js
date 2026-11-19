@@ -18,7 +18,7 @@ export const ROLE_LABELS = {
 };
 export const ROLE_DESC = {
   executive: "Бүх салбарын таамаглал, тайланг харж татна.",
-  manager: "Өгөгдөл оруулж, шалгаж, таамаглал гаргуулна.",
+  manager: "Өгөгдөл оруулж, шалгаж, таамаглана.",
   admin: "Хэрэглэгч, эрх, салбарыг тохируулна.",
 };
 export const branchText = (b) => (!b || !b.length ? "оноогоогүй" : b.includes("*") ? "Бүх салбар" : b.join(", "));
@@ -150,7 +150,7 @@ export function accuracyLevel(wape, baseline) {
 export const PERMISSION_ROWS = [
   ["Өгөгдөл оруулах, алдаа засах", ["manager"]],
   ["Өгөгдлийн шалгалтын тайлан харах", ["executive", "manager"]],
-  ["Таамаглал гаргуулах", ["manager"]],
+  ["Таамаглах", ["manager"]],
   ["Таамаглал, тайлан харах", ["executive", "manager"]],
   ["Таамаглалыг гараар засах", ["manager"]],
   ["Excel, CSV татах", ["executive", "manager"]],

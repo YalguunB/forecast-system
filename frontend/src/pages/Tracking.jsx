@@ -32,7 +32,7 @@ export default function Tracking({ params }) {
   const set = (p) => go("tracking", { experiment: eid, h: horizon, ...p });
 
   if (exps.loading) return <Loading />;
-  if (!done.length) return (<><h1>Гүйцэтгэл</h1><Intro><p>Бэлэн таамаглал алга. Эхлээд таамаглал гаргуулна уу.</p></Intro></>);
+  if (!done.length) return (<><h1>Гүйцэтгэл</h1><Intro><p>Бэлэн таамаглал алга. Эхлээд «Таамаглах» хэсэгт таамаглана уу.</p></Intro></>);
 
   const what = t?.experiment.target === "demand" ? "эрэлт" : "борлуулалт";
   const whatWith = what === "эрэлт" ? "эрэлттэй" : "борлуулалттай";
