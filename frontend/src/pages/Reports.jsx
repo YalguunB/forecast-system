@@ -160,7 +160,7 @@ export default function Reports({ params }) {
             <Kpi label={`Таамаглал: ${PERIOD_LONG[horizon]}`} value={fmt(agg.total, 0)}
               sub={<>{agg.change === null ? r.experiment.unit : `${chg(agg.change)} өмнөх өгөгдлөөс`}
                 {agg.nAdj > 0 && <><br />Гар засвар {agg.nAdj} сар ({agg.adjDelta >= 0 ? "+" : "−"}{fmt(Math.abs(agg.adjDelta), 0)}) орсон</>}</>} />
-            <Kpi label={<>Найдвартай байдал <Help k="WAPE" /></>} value={accuracyLevel(agg.wapeSel, agg.wapeBase).label}
+            <Kpi label={<>Найдвартай байдал <Help k="WAPE" /></>} value={(() => { const a = accuracyLevel(agg.wapeSel, agg.wapeBase); return <span className={`grade ${a.tone}`}>{a.label}</span>; })()}
                  sub={`сарын алдаа ${pct(agg.wapeSel)} (энгийн арга ${pct(agg.wapeBase)})`} />
             {horizon > 1 && <Kpi label={<>{PERIOD_OF[horizon]} нийт дүнгийн алдаа <Help k="SUM_APE" /></>} value={pct(agg.periodErr)} sub={exp?.preliminary ? "өнгөрсөн 3 сараар шалгасан" : "өнгөрсөн 12 сараар шалгасан"} />}
             <Kpi label={<>Энгийн аргаас сайн <Help k="baseline" /></>} value={pct(agg.improved)} sub="барааны хувь" />
